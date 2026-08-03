@@ -1,14 +1,62 @@
-import axios from 'axios'
+// Thin wrapper around the FindIt Campus FastAPI backend.
+// Set VITE_API_BASE_URL in your frontend/.env to override the default.
 
-// Points to your local FastAPI backend (uvicorn app.main:app --port 8000)
-const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000',
-})
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-export const createReport = (payload) => api.post('/reports/', payload)
-export const listReports = (reportType) =>
-  api.get('/reports/', { params: reportType ? { report_type: reportType } : {} })
-export const getReport = (id) => api.get(`/reports/${id}`)
-export const findMatches = (reportId) => api.post(`/matches/find/${reportId}`)
+class ApiError extends Error {
+  constructor(message, status, body) {
+    super(message);
+    this.status = status;
+    this.body = body;
+  }
+}
 
-export default api
+async function request(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+
+  let body = null;
+  const text = await res.text();
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+
+  if (!res.ok) {
+    const detail = (body && body.detail) || res.statusText || 'Request failed';
+    throw new ApiError(detail, res.status, body);
+  }
+
+  return body;
+}
+
+/** POST /reports/  — create a lost or found report. */
+export function createReport(payload) {
+  return request('/reports/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** GET /reports/  — optionally filtered by report_type ('lost' | 'found'). */
+export function listReports(reportType) {
+  const qs = reportType ? `?report_type=${encodeURIComponent(reportType)}` : '';
+  return request(`/reports/${qs}`);
+}
+
+/** GET /reports/{id} */
+export function getReport(reportId) {
+  return request(`/reports/${reportId}`);
+}
+
+/** POST /matches/find/{report_id} — run the AI matching pipeline for a report. */
+export function findMatches(reportId) {
+  return request(`/matches/find/${reportId}`, { method: 'POST' });
+}
+
+export { ApiError };

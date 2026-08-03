@@ -1,35 +1,22 @@
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
-
-// Placeholder pages -- replace with real components in src/pages/ as you build them.
-function Home() {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <h1>FindIt Campus</h1>
-      <p>Report a lost or found item, or check for matches.</p>
-      <nav>
-        <Link to="/report/lost">Report Lost Item</Link> |{' '}
-        <Link to="/report/found">Report Found Item</Link>
-      </nav>
-    </div>
-  )
-}
-
-function ReportLost() {
-  return <div style={{ padding: '2rem' }}>TODO: Lost item report form (see src/pages/)</div>
-}
-
-function ReportFound() {
-  return <div style={{ padding: '2rem' }}>TODO: Found item report form (see src/pages/)</div>
-}
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Header from './components/Header';
+import Landing from './pages/Landing';
+import Dashboard from './pages/Dashboard';
+import ReportForm from './pages/ReportForm';
+import Matches from './pages/Matches';
+import './styles/global.css';
 
 export default function App() {
   return (
     <BrowserRouter>
+      <Header />
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/report/lost" element={<ReportLost />} />
-        <Route path="/report/found" element={<ReportFound />} />
+        <Route path="/" element={<Landing />} />
+        <Route path="/lost" element={<Dashboard reportType="lost" />} />
+        <Route path="/found" element={<Dashboard reportType="found" />} />
+        <Route path="/report/:type" element={<ReportForm />} />
+        <Route path="/matches/:reportId" element={<Matches />} />
       </Routes>
     </BrowserRouter>
-  )
+  );
 }
