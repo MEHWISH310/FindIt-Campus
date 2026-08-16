@@ -42,6 +42,7 @@ class ReportOut(BaseModel):
     location_name: Optional[str]
     item_datetime: datetime
     created_at: datetime
+    photo_paths: List[str] = []
 
     class Config:
         from_attributes = True

@@ -1,3 +1,5 @@
+import { API_BASE } from '../api/client';
+
 function timeAgo(dateString) {
   if (!dateString) return '';
   const then = new Date(dateString).getTime();
@@ -17,9 +19,15 @@ function timeAgo(dateString) {
  */
 export default function NoticeCard({ report, compact = false, onFindMatches }) {
   const isFound = report.report_type === 'found';
+  const thumbnail = report.photo_paths?.[0];
 
   return (
     <div className={`notice-card ${isFound ? 'notice-card--found' : ''} ${compact ? 'notice-card--compact' : ''}`}>
+      {thumbnail && (
+        <div className="notice-thumb">
+          <img src={`${API_BASE}${thumbnail}`} alt="" />
+        </div>
+      )}
       <span className={`notice-tag ${isFound ? 'notice-tag--found' : 'notice-tag--lost'}`}>
         {isFound ? 'Found' : 'Lost'}
       </span>

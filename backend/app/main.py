@@ -6,9 +6,13 @@ Then open http://127.0.0.1:8000/docs for the auto-generated Swagger UI --
 this is the fastest way to test the API without building the frontend yet.
 """
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
+from app.core.config import settings
 from app.db.session import Base, engine
 from app.models import Report, Match, CustodyRecord  # noqa: F401 -- must import so tables register
 from app.routers import reports_router, matches_router
@@ -38,6 +42,14 @@ def on_startup():
     # switch to Alembic migrations (database/migrations/) before this gets
     # used with real data, since create_all() can't handle schema changes.
     Base.metadata.create_all(bind=engine)
+
+
+# Photos are saved to disk under settings.upload_dir (see routers/reports.py's
+# upload_photos endpoint) and served back out from here at /uploads/<report_id>/<file>.
+# The folder must exist BEFORE StaticFiles is constructed (it checks at import
+# time, not at request time), so this runs here rather than in on_startup above.
+os.makedirs(settings.upload_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 
 @app.get("/")

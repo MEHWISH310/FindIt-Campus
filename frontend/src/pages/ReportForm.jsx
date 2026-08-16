@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { createReport, ApiError } from '../api/client';
+import { createReport, uploadPhotos, ApiError } from '../api/client';
+
+const MAX_PHOTOS = 5;
+const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB, matches backend's MAX_FILE_SIZE_BYTES
 
 const CATEGORIES = [
   'Wallet',
@@ -39,8 +42,46 @@ export default function ReportForm() {
   const [error, setError] = useState(null);
   const [locating, setLocating] = useState(false);
 
+  const [photos, setPhotos] = useState([]); // File[]
+  const [previews, setPreviews] = useState([]); // object URLs for the thumbnails
+  const [uploadStatus, setUploadStatus] = useState(null); // null | 'uploading' | 'failed'
+
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  // Revoke object URLs when they're replaced/unmounted -- otherwise each
+  // selected photo leaks memory for the life of the tab.
+  useEffect(() => {
+    return () => previews.forEach((url) => URL.revokeObjectURL(url));
+  }, [previews]);
+
+  function handlePhotoSelect(e) {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-selecting the same file after removing it
+
+    const room = MAX_PHOTOS - photos.length;
+    if (room <= 0) {
+      setError(`You can attach up to ${MAX_PHOTOS} photos.`);
+      return;
+    }
+
+    const tooBig = picked.find((f) => f.size > MAX_FILE_SIZE);
+    if (tooBig) {
+      setError(`${tooBig.name} is over 8MB — pick a smaller photo.`);
+      return;
+    }
+
+    const accepted = picked.slice(0, room);
+    setPhotos((p) => [...p, ...accepted]);
+    setPreviews((p) => [...p, ...accepted.map((f) => URL.createObjectURL(f))]);
+    setError(null);
+  }
+
+  function removePhoto(index) {
+    URL.revokeObjectURL(previews[index]);
+    setPhotos((p) => p.filter((_, i) => i !== index));
+    setPreviews((p) => p.filter((_, i) => i !== index));
   }
 
   function useMyLocation() {
@@ -88,6 +129,20 @@ export default function ReportForm() {
         hidden_answer: form.hidden_answer,
       };
       const report = await createReport(payload);
+
+      // Photos are uploaded as a second step, after the report exists --
+      // if this fails, the report itself is still saved (text-only match
+      // is still useful), so we warn instead of blocking navigation.
+      if (photos.length > 0) {
+        setUploadStatus('uploading');
+        try {
+          await uploadPhotos(report.id, photos);
+        } catch (uploadErr) {
+          setUploadStatus('failed');
+          console.error('Photo upload failed:', uploadErr);
+        }
+      }
+
       navigate(`/matches/${report.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong submitting the report.');
@@ -133,6 +188,45 @@ export default function ReportForm() {
             placeholder="Details that would help someone recognize it"
           />
         </label>
+
+        <div className="field photo-field">
+          <span>Photos (optional, up to {MAX_PHOTOS})</span>
+          <p className="photo-hint">
+            A clear photo makes matching much more reliable — the system compares
+            photos across reports, not just descriptions.
+          </p>
+
+          {previews.length > 0 && (
+            <div className="photo-preview-grid">
+              {previews.map((url, i) => (
+                <div className="photo-thumb" key={url}>
+                  <img src={url} alt={`Selected photo ${i + 1}`} />
+                  <button
+                    type="button"
+                    className="photo-thumb-remove"
+                    onClick={() => removePhoto(i)}
+                    aria-label={`Remove photo ${i + 1}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {photos.length < MAX_PHOTOS && (
+            <label className="photo-picker-btn">
+              + Add photo
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                multiple
+                onChange={handlePhotoSelect}
+                hidden
+              />
+            </label>
+          )}
+        </div>
 
         <div className="field-row">
           <label className="field">
@@ -233,9 +327,19 @@ export default function ReportForm() {
         )}
 
         {error && <p className="form-error">{error}</p>}
+        {uploadStatus === 'failed' && (
+          <p className="form-warning">
+            Report saved, but photo upload failed — you can still find matches on the
+            description alone.
+          </p>
+        )}
 
         <button type="submit" className="submit-btn" disabled={submitting}>
-          {submitting ? 'Submitting…' : 'Submit report'}
+          {submitting
+            ? uploadStatus === 'uploading'
+              ? 'Uploading photos…'
+              : 'Submitting…'
+            : 'Submit report'}
         </button>
       </form>
     </div>

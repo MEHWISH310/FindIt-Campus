@@ -59,4 +59,38 @@ export function findMatches(reportId) {
   return request(`/matches/find/${reportId}`, { method: 'POST' });
 }
 
+/**
+ * POST /reports/{report_id}/photos — attach photos to an existing report.
+ * `files` is a FileList or array of File objects (max 5, from ReportForm's
+ * file input). Doesn't go through request() because we must NOT set a
+ * Content-Type header here -- the browser sets its own multipart boundary
+ * when it sees a FormData body, and overriding it breaks the upload.
+ */
+export async function uploadPhotos(reportId, files) {
+  const formData = new FormData();
+  Array.from(files).forEach((file) => formData.append('files', file));
+
+  const res = await fetch(`${API_BASE}/reports/${reportId}/photos`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  let body = null;
+  const text = await res.text();
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+
+  if (!res.ok) {
+    const detail = (body && body.detail) || res.statusText || 'Photo upload failed';
+    throw new ApiError(detail, res.status, body);
+  }
+
+  return body;
+}
+
 export { ApiError };
