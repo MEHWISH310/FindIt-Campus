@@ -46,6 +46,10 @@ class ReportOut(BaseModel):
     is_high_risk: bool = False
     days_open: int = 0
     is_stale: bool = False
+    # Safe to expose (unlike hidden_answer) -- this is what a claimant needs
+    # to see in order to know what they're being asked to prove. Only ever
+    # set on FOUND reports; null on LOST reports.
+    hidden_question: Optional[str] = None
 
     @field_validator("is_high_risk", mode="before")
     @classmethod
@@ -71,3 +75,42 @@ class MatchOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ClaimRequest(BaseModel):
+    """Submitted by whoever is trying to claim a FOUND item -- they must
+    answer the finder's hidden_question correctly. claimant_contact is
+    optional (e.g. they hand it over in person and just want it logged)."""
+    claimant_name: str
+    claimant_contact: Optional[str] = None
+    hidden_answer: str
+    notes: Optional[str] = None
+
+
+class CustodyRecordOut(BaseModel):
+    id: UUID
+    match_id: UUID
+    item_name: str
+    claimant_name: str
+    claimant_contact: Optional[str]
+    verifier_name: str
+    handover_datetime: datetime
+    notes: Optional[str]
+    identity_verified: bool = False
+
+    @field_validator("identity_verified", mode="before")
+    @classmethod
+    def _coerce_verified(cls, v):
+        if isinstance(v, str):
+            return v.lower() == "true"
+        return bool(v)
+
+    class Config:
+        from_attributes = True
+
+
+class ClaimResponse(BaseModel):
+    verified: bool
+    message: str
+    match: Optional[MatchOut] = None
+    custody_record: Optional[CustodyRecordOut] = None

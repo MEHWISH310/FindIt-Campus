@@ -13,3 +13,4 @@ pydantic>=2.9.0
 python-multipart==0.0.9
 pydantic-settings>=2.5.0
 tf-keras
+python-socketio==5.11.4

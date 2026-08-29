@@ -21,6 +21,7 @@ export default function NoticeCard({ report, compact = false, onFindMatches }) {
   const isFound = report.report_type === 'found';
   const thumbnail = report.photo_paths?.[0];
   const isEscalated = report.status === 'escalated';
+  const isResolved = report.status === 'resolved';
 
   return (
     <div className={`notice-card ${isFound ? 'notice-card--found' : ''} ${compact ? 'notice-card--compact' : ''}`}>
@@ -41,6 +42,11 @@ export default function NoticeCard({ report, compact = false, onFindMatches }) {
         {isEscalated && (
           <span className="notice-tag notice-tag--risk" title="Unclaimed for over a week">
             Escalated
+          </span>
+        )}
+        {isResolved && (
+          <span className="notice-tag notice-tag--resolved" title="Claimed and returned to its owner">
+            ✅ Resolved
           </span>
         )}
       </div>
@@ -67,7 +73,7 @@ export default function NoticeCard({ report, compact = false, onFindMatches }) {
       </dl>
       <div className="notice-footer">
         <span>{timeAgo(report.created_at || report.item_datetime)}</span>
-        {onFindMatches && (
+        {onFindMatches && report.status === 'open' && (
           <button type="button" className="notice-footer-link" onClick={onFindMatches}>
             Find matches →
           </button>

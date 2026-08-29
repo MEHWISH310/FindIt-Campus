@@ -21,9 +21,11 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.report import Report, ReportType, ReportStatus
 from app.models.match import Match, MatchStatus
-from app.routers.schemas import MatchOut
+from app.models.custody import CustodyRecord
+from app.routers.schemas import MatchOut, ClaimRequest, ClaimResponse
 from app.matching.embeddings import cosine_sim
 from app.matching.fusion import ReportSignals, composite_score
+from app.realtime import sio
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -32,6 +34,10 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 # "if the leading candidates are not too far apart... asks a targeted
 # disambiguation question").
 DISAMBIGUATION_MARGIN = 0.05
+
+# A raw_score at or above this is worth a real-time "match found" ping --
+# below this it's a weak candidate that would just be noise in a notification.
+NOTIFY_SCORE_THRESHOLD = 0.6
 
 
 def _haversine_meters(lat1, lon1, lat2, lon2) -> float:
@@ -45,7 +51,7 @@ def _haversine_meters(lat1, lon1, lat2, lon2) -> float:
 
 
 @router.post("/find/{report_id}", response_model=List[MatchOut])
-def find_matches(report_id: str, db: Session = Depends(get_db)):
+async def find_matches(report_id: str, db: Session = Depends(get_db)):
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:
         raise HTTPException(404, "Report not found")
@@ -105,4 +111,101 @@ def find_matches(report_id: str, db: Session = Depends(get_db)):
     for m in saved_matches:
         db.refresh(m)
 
+    # Real-time "match found" ping -- only for a genuinely strong top
+    # candidate, so this doesn't fire for every low-confidence guess.
+    if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD:
+        await sio.emit(
+            "match:found",
+            {
+                "report_id": str(report.id),
+                "report_title": report.title,
+                "score": round(scored[0][1]["score"], 3),
+                "needs_disambiguation": needs_disambiguation,
+            },
+        )
+
     return saved_matches
+
+
+@router.post("/{match_id}/verify", response_model=ClaimResponse)
+async def verify_claim(match_id: str, payload: ClaimRequest, db: Session = Depends(get_db)):
+    """
+    Asymmetric verification (per your abstract): whoever is claiming the
+    item must answer the FOUND report's hidden_question correctly -- we
+    never show them hidden_answer, we just check equality server-side.
+
+    On a correct answer:
+      - match.status -> CONFIRMED
+      - both the lost and found reports -> RESOLVED
+      - a CustodyRecord is written as the audit trail of the handover
+
+    On a wrong answer: 200 with verified=false (not a 4xx -- this is an
+    expected outcome the frontend needs to render inline, not an error),
+    match/report state is left untouched so they can retry.
+
+    No staff/auth layer exists yet, so verifier_name is a placeholder --
+    swap this for the logged-in staff/volunteer's name once auth (backlog
+    Task 8) lands.
+    """
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+
+    if match.status == MatchStatus.CONFIRMED:
+        raise HTTPException(400, "This match has already been confirmed and claimed.")
+    if match.status == MatchStatus.REJECTED:
+        raise HTTPException(400, "This match was rejected and can no longer be claimed.")
+
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    if not found_report or not lost_report:
+        raise HTTPException(404, "One of the reports behind this match no longer exists")
+
+    if not found_report.hidden_answer:
+        raise HTTPException(400, "This found report has no verification question set up")
+
+    # Case/whitespace-insensitive so "iPhone" vs "iphone" doesn't fail
+    # someone over a genuinely correct answer.
+    is_correct = payload.hidden_answer.strip().lower() == found_report.hidden_answer.strip().lower()
+
+    if not is_correct:
+        return ClaimResponse(
+            verified=False,
+            message="That answer doesn't match. You can try again.",
+            match=match,
+            custody_record=None,
+        )
+
+    match.status = MatchStatus.CONFIRMED
+    found_report.status = ReportStatus.RESOLVED
+    lost_report.status = ReportStatus.RESOLVED
+
+    record = CustodyRecord(
+        match_id=match.id,
+        item_name=found_report.title,
+        claimant_name=payload.claimant_name,
+        claimant_contact=payload.claimant_contact,
+        verifier_name="Self-service verification (no staff auth yet)",
+        notes=payload.notes,
+        identity_verified="true",
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(match)
+    db.refresh(record)
+
+    await sio.emit(
+        "item:claimed",
+        {
+            "match_id": str(match.id),
+            "item_name": record.item_name,
+            "claimant_name": record.claimant_name,
+        },
+    )
+
+    return ClaimResponse(
+        verified=True,
+        message="Verified! This item has been marked as returned to its owner.",
+        match=match,
+        custody_record=record,
+    )

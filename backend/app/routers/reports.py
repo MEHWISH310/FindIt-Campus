@@ -31,6 +31,7 @@ from app.models.report import (
 )
 from app.routers.schemas import ReportCreate, ReportOut
 from app.matching.embeddings import encode_text, encode_images
+from app.realtime import sio
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -42,7 +43,7 @@ MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB per photo
 
 
 @router.post("/", response_model=ReportOut)
-def create_report(payload: ReportCreate, db: Session = Depends(get_db)):
+async def create_report(payload: ReportCreate, db: Session = Depends(get_db)):
     if payload.report_type not in (ReportType.LOST.value, ReportType.FOUND.value):
         raise HTTPException(400, "report_type must be 'lost' or 'found'")
 
@@ -79,6 +80,20 @@ def create_report(payload: ReportCreate, db: Session = Depends(get_db)):
     db.add(report)
     db.commit()
     db.refresh(report)
+
+    # Real-time notification -- see app/realtime.py. This endpoint is async
+    # specifically so it can await this; the DB calls above stay plain
+    # SQLAlchemy (sync), which is fine at this scale (see docstring at top).
+    await sio.emit(
+        "report:created",
+        {
+            "id": str(report.id),
+            "report_type": report.report_type.value if hasattr(report.report_type, "value") else report.report_type,
+            "title": report.title,
+            "is_high_risk": report.is_high_risk == "true",
+        },
+    )
+
     return report
 
 
@@ -116,7 +131,7 @@ def get_report(report_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/escalate-stale", response_model=List[ReportOut])
-def escalate_stale_high_risk(db: Session = Depends(get_db)):
+async def escalate_stale_high_risk(db: Session = Depends(get_db)):
     """
     Finds FOUND high-risk reports (ID/phone/academic docs) that have sat
     OPEN and unclaimed for ESCALATION_DAYS_THRESHOLD+ days, and flips their
@@ -145,6 +160,15 @@ def escalate_stale_high_risk(db: Session = Depends(get_db)):
     db.commit()
     for report in candidates:
         db.refresh(report)
+
+    if candidates:
+        await sio.emit(
+            "report:escalated",
+            {
+                "count": len(candidates),
+                "reports": [{"id": str(r.id), "title": r.title} for r in candidates],
+            },
+        )
 
     return candidates
 

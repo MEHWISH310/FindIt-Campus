@@ -115,4 +115,28 @@ export function escalateStale() {
   return request('/reports/escalate-stale', { method: 'POST' });
 }
 
+/**
+ * POST /matches/{match_id}/verify — submit a claim attempt (claimant_name,
+ * claimant_contact, hidden_answer, notes). Returns { verified, message,
+ * match, custody_record }. A wrong answer comes back as verified: false,
+ * not a thrown error, so the form can show it inline and let them retry.
+ * A correct answer resolves both reports, so we fire the reports-changed
+ * event to bump counts back down (see Header.jsx).
+ */
+export async function claimMatch(matchId, payload) {
+  const result = await request(`/matches/${matchId}/verify`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (result?.verified) {
+    notifyReportsChanged();
+  }
+  return result;
+}
+
+/** GET /custody/ — the full handover log, for the "Claimed items" page. */
+export function listCustodyRecords() {
+  return request('/custody/');
+}
+
 export { ApiError };

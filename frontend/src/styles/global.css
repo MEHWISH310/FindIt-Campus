@@ -1370,3 +1370,191 @@ button {
     transform: translateY(-7px) rotate(-8deg);
   }
 }
+
+/* ---- Task 4: claim / verification flow ---- */
+
+.notice-tag--resolved {
+  background: var(--found-soft);
+  color: var(--found);
+}
+
+.claim-toggle {
+  font-weight: 600;
+}
+
+.claim-form {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.claim-form-question {
+  margin: 0 0 2px;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.claim-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.claim-form input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.claim-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.claim-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.claim-form-actions button[type='submit'] {
+  background: var(--accent);
+  color: var(--surface);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 16px;
+  height: 38px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.claim-form-actions button[type='submit']:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.claim-form-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 0 16px;
+  height: 38px;
+  cursor: pointer;
+}
+
+.claim-form-error {
+  margin: 0;
+  color: var(--lost);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  background: var(--lost-soft);
+  border-radius: var(--radius-sm);
+}
+
+.claim-form--success {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--found-soft);
+  color: var(--found);
+}
+
+.claim-form--success p {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.claim-form-success-note {
+  margin: 12px 0 0;
+  font-size: 0.85rem;
+  color: var(--found);
+}
+
+/* ---- Claimed items page ---- */
+
+.custody-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.custody-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.custody-table th,
+.custody-table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.custody-table th {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.custody-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.custody-table tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+/* ---- Socket.IO live notifications ---- */
+
+.toast-stack {
+  position: fixed;
+  top: 84px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 40px));
+}
+
+.toast {
+  padding: 12px 16px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -9,7 +9,12 @@ export default function Header() {
   const refreshCounts = useCallback(() => {
     Promise.all([listReports('lost'), listReports('found')])
       .then(([lost, found]) => {
-        setCounts({ lost: lost?.length ?? 0, found: found?.length ?? 0 });
+        // Only count reports still actually open -- a claimed/resolved
+        // report shouldn't keep padding the nav badge. This is what makes
+        // the count drop back down after a successful claim (see
+        // client.js's claimMatch, which fires REPORTS_CHANGED_EVENT).
+        const openCount = (list) => (list ?? []).filter((r) => r.status === 'open').length;
+        setCounts({ lost: openCount(lost), found: openCount(found) });
       })
       .catch(() => {
         setCounts({ lost: 0, found: 0 });
@@ -18,10 +23,8 @@ export default function Header() {
 
   useEffect(() => {
     refreshCounts();
-    // Any successful report creation (see client.js) fires this so the
-    // nav badge updates immediately, without a page refresh. The same
-    // event will fire on claim/resolve once that flow exists, so counts
-    // drop back down too instead of only ever growing.
+    // Any successful report creation or claim (see client.js) fires this
+    // so the nav badge updates immediately, without a page refresh.
     window.addEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
     return () => window.removeEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
   }, [refreshCounts]);
@@ -43,6 +46,9 @@ export default function Header() {
           <NavLink to="/found" className={({ isActive }) => (isActive ? 'active' : '')}>
             Found
             {counts.found !== null && <span className="nav-count">{counts.found}</span>}
+          </NavLink>
+          <NavLink to="/claimed" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Claimed
           </NavLink>
         </nav>
 
