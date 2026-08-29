@@ -7,6 +7,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Lets the install prompt/service worker show up under `npm run dev`
+      // too, not just production builds -- convenient for testing, but the
+      // real check before shipping is still `npm run build && npm run preview`.
+      devOptions: {
+        enabled: true,
+      },
       // Precache the app shell; API calls to the FastAPI backend and the
       // Socket.IO connection are left alone (network-only) since lost &
       // found data needs to be live, not cached -- this PWA is about making
