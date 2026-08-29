@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listReports } from '../api/client';
+import { listReports, escalateStale } from '../api/client';
 import NoticeCard from '../components/NoticeCard';
 
 export default function Dashboard({ reportType }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [escalating, setEscalating] = useState(false);
+  const [escalationResult, setEscalationResult] = useState(null);
   const navigate = useNavigate();
+
+  function reload() {
+    setLoading(true);
+    setError(null);
+    listReports(reportType)
+      .then((data) => setReports(data ?? []))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +39,24 @@ export default function Dashboard({ reportType }) {
     };
   }, [reportType]);
 
+  async function handleEscalationCheck() {
+    setEscalating(true);
+    setEscalationResult(null);
+    try {
+      const escalated = await escalateStale();
+      setEscalationResult(
+        escalated.length === 0
+          ? 'No unclaimed high-risk items past the threshold right now.'
+          : `Escalated ${escalated.length} unclaimed high-risk item(s).`
+      );
+      reload(); // so any newly-escalated cards refresh their badge immediately
+    } catch (err) {
+      setEscalationResult(`Couldn't run the check: ${err.message}`);
+    } finally {
+      setEscalating(false);
+    }
+  }
+
   const label = reportType === 'lost' ? 'Lost' : 'Found';
 
   return (
@@ -37,7 +66,20 @@ export default function Dashboard({ reportType }) {
           {label}
           {!loading && !error && <span className="dashboard-count">{reports.length}</span>}
         </h1>
+        {reportType === 'found' && (
+          <button
+            type="button"
+            className="escalation-check-btn"
+            onClick={handleEscalationCheck}
+            disabled={escalating}
+            title="Marks unclaimed ID/phone/document reports older than 7 days as escalated"
+          >
+            {escalating ? 'Checking…' : 'Run escalation check'}
+          </button>
+        )}
       </div>
+
+      {escalationResult && <p className="dashboard-status">{escalationResult}</p>}
 
       {loading && <p className="dashboard-status status-pulse">Loading reports…</p>}
       {error && <p className="dashboard-status dashboard-status--error">Couldn't reach the backend: {error}</p>}

@@ -20,6 +20,7 @@ function timeAgo(dateString) {
 export default function NoticeCard({ report, compact = false, onFindMatches }) {
   const isFound = report.report_type === 'found';
   const thumbnail = report.photo_paths?.[0];
+  const isEscalated = report.status === 'escalated';
 
   return (
     <div className={`notice-card ${isFound ? 'notice-card--found' : ''} ${compact ? 'notice-card--compact' : ''}`}>
@@ -28,11 +29,28 @@ export default function NoticeCard({ report, compact = false, onFindMatches }) {
           <img src={`${API_BASE}${thumbnail}`} alt="" />
         </div>
       )}
-      <span className={`notice-tag ${isFound ? 'notice-tag--found' : 'notice-tag--lost'}`}>
-        {isFound ? 'Found' : 'Lost'}
-      </span>
+      <div className="notice-tag-row">
+        <span className={`notice-tag ${isFound ? 'notice-tag--found' : 'notice-tag--lost'}`}>
+          {isFound ? 'Found' : 'Lost'}
+        </span>
+        {report.is_high_risk && (
+          <span className="notice-tag notice-tag--risk" title="ID, phone, or academic documents get priority handling">
+            ⚠ High-risk
+          </span>
+        )}
+        {isEscalated && (
+          <span className="notice-tag notice-tag--risk" title="Unclaimed for over a week">
+            Escalated
+          </span>
+        )}
+      </div>
       <h3 className="notice-title">{report.title}</h3>
       {!compact && <p className="notice-desc">{report.description}</p>}
+      {report.is_stale && !compact && (
+        <p className="notice-stale-note">
+          Still searching — reported {report.days_open} days ago
+        </p>
+      )}
       <dl className="notice-meta">
         {report.category && (
           <div>

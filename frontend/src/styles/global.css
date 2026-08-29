@@ -644,6 +644,27 @@ button {
   gap: 12px;
 }
 
+.escalation-check-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.escalation-check-btn:hover:not(:disabled) {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.escalation-check-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .dashboard-title--lost {
   color: var(--lost);
 }
@@ -755,6 +776,28 @@ button {
 .notice-tag--found {
   background: var(--found-soft);
   color: var(--found);
+}
+
+.notice-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.notice-tag-row .notice-tag {
+  margin-bottom: 10px;
+}
+
+.notice-tag--risk {
+  background: var(--warn-soft, #fdecc8);
+  color: var(--warn, #a15c00);
+}
+
+.notice-stale-note {
+  margin: -2px 0 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .notice-title {

@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ReportCreate(BaseModel):
@@ -43,6 +43,18 @@ class ReportOut(BaseModel):
     item_datetime: datetime
     created_at: datetime
     photo_paths: List[str] = []
+    is_high_risk: bool = False
+    days_open: int = 0
+    is_stale: bool = False
+
+    @field_validator("is_high_risk", mode="before")
+    @classmethod
+    def _coerce_high_risk(cls, v):
+        # DB stores this as the string "true"/"false" (see models/report.py) --
+        # normalize to a real bool before it reaches the frontend.
+        if isinstance(v, str):
+            return v.lower() == "true"
+        return bool(v)
 
     class Config:
         from_attributes = True

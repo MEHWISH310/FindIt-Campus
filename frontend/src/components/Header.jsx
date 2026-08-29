@@ -1,24 +1,30 @@
 import { NavLink } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import ThemeToggle from './ThemeToggle';
-import { listReports } from '../api/client';
+import { listReports, REPORTS_CHANGED_EVENT } from '../api/client';
 
 export default function Header() {
   const [counts, setCounts] = useState({ lost: null, found: null });
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshCounts = useCallback(() => {
     Promise.all([listReports('lost'), listReports('found')])
       .then(([lost, found]) => {
-        if (!cancelled) setCounts({ lost: lost?.length ?? 0, found: found?.length ?? 0 });
+        setCounts({ lost: lost?.length ?? 0, found: found?.length ?? 0 });
       })
       .catch(() => {
-        if (!cancelled) setCounts({ lost: 0, found: 0 });
+        setCounts({ lost: 0, found: 0 });
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    refreshCounts();
+    // Any successful report creation (see client.js) fires this so the
+    // nav badge updates immediately, without a page refresh. The same
+    // event will fire on claim/resolve once that flow exists, so counts
+    // drop back down too instead of only ever growing.
+    window.addEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
+    return () => window.removeEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
+  }, [refreshCounts]);
 
   return (
     <header className="site-header">

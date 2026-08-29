@@ -33,6 +33,21 @@ class ReportStatus(str, enum.Enum):
     ESCALATED = "escalated" # unclaimed high-risk item (ID/phone/docs), flagged
 
 
+# Categories that trigger is_high_risk on report creation (see reports.py's
+# create_report). Matched case-insensitively against the free-text category
+# field, since there's no fixed category table yet.
+HIGH_RISK_CATEGORIES = {"id card", "phone", "laptop", "academic documents", "documents"}
+
+# A LOST report open this many days without a match is considered "stale" --
+# used to push it down in listings so fresher reports get attention first
+# (see reports.py's list_reports ordering).
+STALE_DAYS_THRESHOLD = 14
+
+# A FOUND high-risk report open this many days without being claimed gets
+# auto-escalated (see reports.py's POST /reports/escalate-stale).
+ESCALATION_DAYS_THRESHOLD = 7
+
+
 class Report(Base):
     __tablename__ = "reports"
 
@@ -81,3 +96,22 @@ class Report(Base):
     matches_as_found = relationship(
         "Match", foreign_keys="Match.found_report_id", back_populates="found_report"
     )
+
+    @property
+    def days_open(self) -> int:
+        """Days since the item was lost/found, for OPEN reports. Used to
+        surface staleness in listings and to drive escalation checks."""
+        if self.status != ReportStatus.OPEN:
+            return 0
+        return max(0, (datetime.utcnow() - self.item_datetime).days)
+
+    @property
+    def is_stale(self) -> bool:
+        """A LOST report that's been open a long time with no match --
+        pushed down in listings (see reports.py's list_reports) so newer
+        reports get more visibility, without ever hiding it entirely."""
+        return (
+            self.report_type == ReportType.LOST
+            and self.status == ReportStatus.OPEN
+            and self.days_open >= STALE_DAYS_THRESHOLD
+        )

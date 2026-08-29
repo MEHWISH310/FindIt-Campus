@@ -3,6 +3,16 @@
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+// A tiny event bus so components that don't share state (like the Header's
+// nav counts and the report form) can stay in sync. Simpler than lifting
+// state up through the whole app for something this small -- whenever a
+// report is created, resolved, or claimed, we fire this event and anything
+// listening (right now: Header's counts) refetches.
+export const REPORTS_CHANGED_EVENT = 'findit:reports-changed';
+function notifyReportsChanged() {
+  window.dispatchEvent(new Event(REPORTS_CHANGED_EVENT));
+}
+
 class ApiError extends Error {
   constructor(message, status, body) {
     super(message);
@@ -36,11 +46,13 @@ async function request(path, options = {}) {
 }
 
 /** POST /reports/  — create a lost or found report. */
-export function createReport(payload) {
-  return request('/reports/', {
+export async function createReport(payload) {
+  const report = await request('/reports/', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+  notifyReportsChanged(); // header's Lost/Found counts should bump immediately
+  return report;
 }
 
 /** GET /reports/  — optionally filtered by report_type ('lost' | 'found'). */
@@ -91,6 +103,16 @@ export async function uploadPhotos(reportId, files) {
   }
 
   return body;
+}
+
+/**
+ * POST /reports/escalate-stale — sweep FOUND high-risk reports unclaimed
+ * for 7+ days and mark them ESCALATED. No scheduler is wired up yet, so
+ * this is triggered manually via the "Run escalation check" button on
+ * the Found dashboard rather than running automatically in the background.
+ */
+export function escalateStale() {
+  return request('/reports/escalate-stale', { method: 'POST' });
 }
 
 export { ApiError };

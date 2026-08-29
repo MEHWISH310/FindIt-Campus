@@ -12,14 +12,23 @@ know it's the first thing to move to a background job under real load.
 
 import os
 import uuid
+from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import case, and_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.report import Report, ReportType
+from app.models.report import (
+    Report,
+    ReportType,
+    ReportStatus,
+    HIGH_RISK_CATEGORIES,
+    STALE_DAYS_THRESHOLD,
+    ESCALATION_DAYS_THRESHOLD,
+)
 from app.routers.schemas import ReportCreate, ReportOut
 from app.matching.embeddings import encode_text, encode_images
 
@@ -57,6 +66,10 @@ def create_report(payload: ReportCreate, db: Session = Depends(get_db)):
         item_datetime=payload.item_datetime,
         hidden_question=payload.hidden_question,
         hidden_answer=payload.hidden_answer,
+        # Auto-detected, not client-supplied -- a reporter shouldn't be able
+        # to mark their own item high-risk (or dodge the flag). Matched
+        # case-insensitively since category is free text, not a fixed enum.
+        is_high_risk="true" if (payload.category or "").strip().lower() in HIGH_RISK_CATEGORIES else "false",
     )
 
     # Compute text embedding now so it's ready for matching immediately.
@@ -74,7 +87,24 @@ def list_reports(report_type: str | None = None, db: Session = Depends(get_db)):
     query = db.query(Report)
     if report_type:
         query = query.filter(Report.report_type == report_type)
-    return query.order_by(Report.created_at.desc()).all()
+
+    # Push stale OPEN lost reports (no activity in STALE_DAYS_THRESHOLD days)
+    # toward the bottom, without ever hiding them -- fresh reports get
+    # visibility first but nothing silently disappears.
+    stale_cutoff = datetime.utcnow() - timedelta(days=STALE_DAYS_THRESHOLD)
+    stale_rank = case(
+        (
+            and_(
+                Report.report_type == ReportType.LOST,
+                Report.status == ReportStatus.OPEN,
+                Report.item_datetime < stale_cutoff,
+            ),
+            1,
+        ),
+        else_=0,
+    )
+
+    return query.order_by(stale_rank.asc(), Report.created_at.desc()).all()
 
 
 @router.get("/{report_id}", response_model=ReportOut)
@@ -83,6 +113,40 @@ def get_report(report_id: str, db: Session = Depends(get_db)):
     if not report:
         raise HTTPException(404, "Report not found")
     return report
+
+
+@router.post("/escalate-stale", response_model=List[ReportOut])
+def escalate_stale_high_risk(db: Session = Depends(get_db)):
+    """
+    Finds FOUND high-risk reports (ID/phone/academic docs) that have sat
+    OPEN and unclaimed for ESCALATION_DAYS_THRESHOLD+ days, and flips their
+    status to ESCALATED so staff can prioritize following up.
+
+    No cron/scheduler is wired into this stack yet -- this is triggered
+    manually via the "Run escalation check" button on the frontend
+    dashboard (or could be hooked into a scheduled task later).
+    """
+    cutoff = datetime.utcnow() - timedelta(days=ESCALATION_DAYS_THRESHOLD)
+
+    candidates = (
+        db.query(Report)
+        .filter(
+            Report.report_type == ReportType.FOUND,
+            Report.status == ReportStatus.OPEN,
+            Report.is_high_risk == "true",
+            Report.item_datetime < cutoff,
+        )
+        .all()
+    )
+
+    for report in candidates:
+        report.status = ReportStatus.ESCALATED
+
+    db.commit()
+    for report in candidates:
+        db.refresh(report)
+
+    return candidates
 
 
 @router.post("/{report_id}/photos", response_model=ReportOut)
