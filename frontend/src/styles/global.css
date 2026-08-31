@@ -866,6 +866,24 @@ button {
   text-decoration: underline;
 }
 
+.notice-primary-action {
+  width: 100%;
+  margin-top: 12px;
+  background: var(--accent);
+  color: var(--surface);
+  border: none;
+  border-radius: var(--radius-sm);
+  height: 38px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: opacity 0.2s var(--ease);
+}
+
+.notice-primary-action:hover {
+  opacity: 0.9;
+}
+
 .notice-card--compact .notice-desc {
   display: none;
 }
@@ -1223,8 +1241,14 @@ button {
   border-color: color-mix(in srgb, var(--warn) 40%, transparent);
 }
 
-.thread-row .notice-card {
+.thread-row-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.thread-row .notice-card {
   border: none;
   border-radius: 0;
 }
@@ -1274,6 +1298,12 @@ button {
   letter-spacing: 0.04em;
 }
 
+.score-pill--estimated {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+}
+
 .signals {
   font-size: 0.62rem;
   color: var(--text-muted);
@@ -1309,6 +1339,77 @@ button {
     border-top: 1px solid var(--border);
     padding: 10px 0;
   }
+}
+
+/* ---- Disambiguation follow-up prompt ---- */
+
+.disambig-prompt {
+  margin-bottom: 28px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+}
+
+.disambig-heading {
+  margin: 0 0 14px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.disambig-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.disambig-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* Border/radius live on .disambig-candidate itself -- strip NoticeCard's
+   own border so it doesn't double up, but keep its padding intact (the
+   thumbnail's negative margin math depends on it, see .notice-thumb). */
+.disambig-candidate .notice-card {
+  border: none;
+  border-radius: 0;
+}
+
+.disambig-question {
+  margin: 0;
+  padding: 0 14px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.disambig-candidate .claim-form-error {
+  margin: 0 14px;
+}
+
+.disambig-choose {
+  align-self: flex-start;
+  margin: 0 14px 14px;
+  background: var(--accent);
+  color: var(--surface);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 16px;
+  height: 36px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.disambig-choose:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 /* --------------------------------------------------------------------------
@@ -1371,6 +1472,59 @@ button {
   }
 }
 
+/* ---- Modal (components/Modal.jsx) ---- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, black 60%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+  animation: modal-fade-in 0.2s var(--ease);
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 420px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 22px;
+  animation: modal-scale-in 0.2s var(--ease);
+}
+
+.modal-heading {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 /* ---- Task 4: claim / verification flow ---- */
 
 .notice-tag--resolved {
@@ -1378,16 +1532,7 @@ button {
   color: var(--found);
 }
 
-.claim-toggle {
-  font-weight: 600;
-}
-
 .claim-form {
-  margin-top: 12px;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-hover);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1465,7 +1610,6 @@ button {
 }
 
 .claim-form--success {
-  margin-top: 12px;
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   background: var(--found-soft);
@@ -1473,7 +1617,7 @@ button {
 }
 
 .claim-form--success p {
-  margin: 0;
+  margin: 0 0 10px;
   font-size: 0.88rem;
 }
 

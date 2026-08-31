@@ -139,4 +139,15 @@ export function listCustodyRecords() {
   return request('/custody/');
 }
 
+/**
+ * POST /matches/{match_id}/disambiguate — forced-choice resolution when
+ * multiple candidates were too close to auto-rank (status
+ * NEEDS_DISAMBIGUATION). `matchId` is the one the user picked as theirs;
+ * the backend promotes it back to a normal CANDIDATE and rejects the rest
+ * of the competing cluster. Returns the updated cluster (List[MatchOut]).
+ */
+export function disambiguateMatch(matchId) {
+  return request(`/matches/${matchId}/disambiguate`, { method: 'POST' });
+}
+
 export { ApiError };

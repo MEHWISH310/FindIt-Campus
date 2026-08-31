@@ -16,8 +16,11 @@ function timeAgo(dateString) {
  *           location_name, item_datetime, status, created_at }
  * compact: hides the description (used in the Matches connector rows)
  * onFindMatches: optional — shows a "Find matches" link that fires this
+ * primaryAction: optional { label, onClick } — shows a solid button in the
+ *   footer (used for "Claim this item" so it reads as the card's main
+ *   call to action, not a stray link floating outside the card)
  */
-export default function NoticeCard({ report, compact = false, onFindMatches }) {
+export default function NoticeCard({ report, compact = false, onFindMatches, primaryAction }) {
   const isFound = report.report_type === 'found';
   const thumbnail = report.photo_paths?.[0];
   const isEscalated = report.status === 'escalated';
@@ -79,6 +82,11 @@ export default function NoticeCard({ report, compact = false, onFindMatches }) {
           </button>
         )}
       </div>
+      {primaryAction && (
+        <button type="button" className="notice-primary-action" onClick={primaryAction.onClick}>
+          {primaryAction.label}
+        </button>
+      )}
     </div>
   );
 }

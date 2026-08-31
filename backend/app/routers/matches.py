@@ -4,17 +4,19 @@ POST /matches/find/{report_id} runs the actual matching pipeline:
   2. score each pair with fusion.composite_score()
   3. save the results as Match rows, sorted best-first
 
-Calibration (turning raw_score into a probability) is intentionally
-optional here -- until you've trained MatchCalibrator on real labelled
-pairs (your evaluation phase), match_probability stays null and the UI
-should just show raw_score/ranking. Wire in a trained, persisted
-calibrator once you have one (pickle it, load it here).
+Calibration (turning raw_score into a probability) loads a persisted,
+pre-fitted MatchCalibrator from disk if one exists (see
+app/matching/train_calibrator.py) -- until enough confirmed matches exist
+to train on, no calibrator.pkl exists yet and match_probability stays
+null, so the UI falls back to showing raw_score/ranking.
 """
 
 import math
 from datetime import datetime
+from pathlib import Path
 from typing import List
 
+import joblib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -24,7 +26,8 @@ from app.models.match import Match, MatchStatus
 from app.models.custody import CustodyRecord
 from app.routers.schemas import MatchOut, ClaimRequest, ClaimResponse
 from app.matching.embeddings import cosine_sim
-from app.matching.fusion import ReportSignals, composite_score
+from app.matching.fusion import ReportSignals, composite_score, competing_cluster
+from app.matching.calibration import MatchCalibrator
 from app.realtime import sio
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -39,6 +42,26 @@ DISAMBIGUATION_MARGIN = 0.05
 # below this it's a weak candidate that would just be noise in a notification.
 NOTIFY_SCORE_THRESHOLD = 0.6
 
+_CALIBRATOR_PATH = Path(__file__).resolve().parent.parent / "matching" / "calibrator.pkl"
+
+
+def _load_calibrator():
+    """Best-effort load of a pre-fitted calibrator. Missing file, corrupt
+    pickle, or an unfitted model all just mean "no calibrator yet" -- the
+    caller falls back to raw_score, so this never needs to raise."""
+    if not _CALIBRATOR_PATH.exists():
+        return None
+    try:
+        calibrator = joblib.load(_CALIBRATOR_PATH)
+    except Exception:
+        return None
+    if isinstance(calibrator, MatchCalibrator) and calibrator.fitted:
+        return calibrator
+    return None
+
+
+_calibrator = _load_calibrator()
+
 
 def _haversine_meters(lat1, lon1, lat2, lon2) -> float:
     """Great-circle distance between two lat/lon points, in meters."""
@@ -48,6 +71,21 @@ def _haversine_meters(lat1, lon1, lat2, lon2) -> float:
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return 2 * R * math.asin(math.sqrt(a))
+
+
+def _disambiguation_question(candidate: Report) -> str:
+    """
+    Rule-based, deterministic question surfacing the candidate's own
+    distinguishing details -- no NLP/LLM involved, consistent with the
+    exact-match style verify_claim() already uses. Paired with a
+    forced-choice UI ("does this describe your item? -> This one"), so the
+    question just needs to give the user enough to recognize their item,
+    not to be answered in free text.
+    """
+    descriptor = " ".join(part for part in (candidate.color, candidate.brand) if part) or candidate.category or "item"
+    where = candidate.location_name or "an unspecified location"
+    when = candidate.item_datetime.strftime("%b %d, %I:%M %p") if candidate.item_datetime else "an unspecified time"
+    return f"A {descriptor} found near {where} around {when} -- is this yours?"
 
 
 @router.post("/find/{report_id}", response_model=List[MatchOut])
@@ -86,23 +124,30 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
 
     scored.sort(key=lambda x: x[1]["score"], reverse=True)
 
-    # Decide status: needs disambiguation if top 2 are too close
-    needs_disambiguation = (
-        len(scored) >= 2 and (scored[0][1]["score"] - scored[1][1]["score"]) < DISAMBIGUATION_MARGIN
-    )
+    # Cluster every candidate within DISAMBIGUATION_MARGIN of the TOP score
+    # (not just top-1 vs top-2) -- so a clear #1 with a distant #3/#4/#5
+    # doesn't drag the whole top-5 batch into "needs review".
+    cluster_indices = competing_cluster([result["score"] for _, result in scored], DISAMBIGUATION_MARGIN)
+    competing_ids = {scored[i][0].id for i in cluster_indices}
+    needs_disambiguation = len(competing_ids) >= 2
 
     saved_matches = []
     for candidate, result in scored[:5]:  # keep top 5 candidates
         lost_id = report.id if report.report_type == ReportType.LOST else candidate.id
         found_id = candidate.id if report.report_type == ReportType.LOST else report.id
+        in_cluster = needs_disambiguation and candidate.id in competing_ids
+
+        match_probability = _calibrator.predict_proba(result["score"]) if _calibrator else None
 
         match = Match(
             lost_report_id=lost_id,
             found_report_id=found_id,
             raw_score=result["score"],
+            match_probability=match_probability,
             used_signals=result["used_signals"],
             signal_weights=result["weights"],
-            status=MatchStatus.NEEDS_DISAMBIGUATION if needs_disambiguation else MatchStatus.CANDIDATE,
+            status=MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE,
+            disambiguation_question=_disambiguation_question(candidate) if in_cluster else None,
         )
         db.add(match)
         saved_matches.append(match)
@@ -114,12 +159,14 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     # Real-time "match found" ping -- only for a genuinely strong top
     # candidate, so this doesn't fire for every low-confidence guess.
     if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD:
+        top_probability = _calibrator.predict_proba(scored[0][1]["score"]) if _calibrator else None
         await sio.emit(
             "match:found",
             {
                 "report_id": str(report.id),
                 "report_title": report.title,
                 "score": round(scored[0][1]["score"], 3),
+                "probability": round(top_probability, 3) if top_probability is not None else None,
                 "needs_disambiguation": needs_disambiguation,
             },
         )
@@ -209,3 +256,39 @@ async def verify_claim(match_id: str, payload: ClaimRequest, db: Session = Depen
         match=match,
         custody_record=record,
     )
+
+
+@router.post("/{match_id}/disambiguate", response_model=List[MatchOut])
+async def resolve_disambiguation(match_id: str, db: Session = Depends(get_db)):
+    """
+    Forced-choice resolution: the user was shown every NEEDS_DISAMBIGUATION
+    candidate for this lost_report_id side by side (with their generated
+    disambiguation_question) and picked THIS one as their item. Promote it
+    back to a normal CANDIDATE (so ClaimForm/verify_claim proceeds as
+    usual) and reject the rest of the cluster it competed against.
+    """
+    chosen = db.query(Match).filter(Match.id == match_id).first()
+    if not chosen:
+        raise HTTPException(404, "Match not found")
+    if chosen.status != MatchStatus.NEEDS_DISAMBIGUATION:
+        raise HTTPException(400, "This match isn't awaiting disambiguation.")
+
+    cluster = (
+        db.query(Match)
+        .filter(
+            Match.lost_report_id == chosen.lost_report_id,
+            Match.status == MatchStatus.NEEDS_DISAMBIGUATION,
+        )
+        .all()
+    )
+
+    for m in cluster:
+        is_chosen = m.id == chosen.id
+        m.status = MatchStatus.CANDIDATE if is_chosen else MatchStatus.REJECTED
+        m.disambiguation_answer = "chosen" if is_chosen else "not chosen"
+
+    db.commit()
+    for m in cluster:
+        db.refresh(m)
+
+    return cluster

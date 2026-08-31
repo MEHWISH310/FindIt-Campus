@@ -11,7 +11,8 @@ const EVENT_RENDERERS = [
   },
   {
     name: 'match:found',
-    render: (d) => `Strong match found for "${d.report_title}" (${Math.round(d.score * 100)}%)`,
+    render: (d) =>
+      `Strong match found for "${d.report_title}" (${Math.round((d.probability ?? d.score) * 100)}%)`,
   },
   {
     name: 'report:escalated',

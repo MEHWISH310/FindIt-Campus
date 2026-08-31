@@ -74,3 +74,18 @@ def composite_score(signals: ReportSignals) -> dict:
         "used_signals": list(present.keys()),
         "weights": weights,
     }
+
+
+def competing_cluster(scores: list, margin: float) -> set:
+    """
+    Given composite scores for every candidate (any order), return the
+    *indices* of every score within `margin` of the top one -- the set
+    that's genuinely too close to auto-rank. Pure function so the
+    disambiguation decision in matches.py is testable without a DB: it's
+    always >= 2 vs top-2 only, so a clear #1 with a distant #3/#4/#5
+    doesn't drag the whole batch into "needs review".
+    """
+    if not scores:
+        return set()
+    top = max(scores)
+    return {i for i, s in enumerate(scores) if top - s < margin}

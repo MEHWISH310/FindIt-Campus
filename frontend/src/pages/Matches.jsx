@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getReport, findMatches, claimMatch, ApiError } from '../api/client';
+import { getReport, findMatches, claimMatch, disambiguateMatch, ApiError } from '../api/client';
 import NoticeCard from '../components/NoticeCard';
+import Modal from '../components/Modal';
+
+function isNeedsReview(match) {
+  return match.status === 'NEEDS_DISAMBIGUATION' || match.status === 'needs_disambiguation';
+}
+
+function isRejected(match) {
+  return match.status === 'REJECTED' || match.status === 'rejected';
+}
 
 /**
- * Inline claim/verification form. Only ever shown for a FOUND counterpart
- * report -- the claimant is proving the item is theirs by answering the
- * finder's hidden_question (asymmetric verification, per the abstract).
+ * Claim/verification popup. Only ever shown for a FOUND counterpart report
+ * -- the claimant is proving the item is theirs by answering the finder's
+ * hidden_question (asymmetric verification, per the abstract). Opened via
+ * NoticeCard's primaryAction button rather than expanding inline, so it
+ * doesn't get squeezed into thread-row's flex layout as its own column.
  */
-function ClaimForm({ match, foundReport, onClaimed }) {
-  const [open, setOpen] = useState(false);
+function ClaimModal({ match, foundReport, onClaimed, onClose }) {
   const [claimantName, setClaimantName] = useState('');
   const [claimantContact, setClaimantContact] = useState('');
   const [hiddenAnswer, setHiddenAnswer] = useState('');
@@ -39,82 +49,163 @@ function ClaimForm({ match, foundReport, onClaimed }) {
     }
   }
 
-  if (result?.verified) {
-    return (
-      <div className="claim-form claim-form--success">
-        <p>✅ {result.message}</p>
-      </div>
-    );
-  }
+  return (
+    <Modal onClose={onClose} labelledBy="claim-modal-heading">
+      <h2 id="claim-modal-heading" className="modal-heading">
+        Claim this item
+      </h2>
 
-  if (!open) {
-    return (
-      <button type="button" className="notice-footer-link claim-toggle" onClick={() => setOpen(true)}>
-        Claim this item →
-      </button>
-    );
+      {result?.verified ? (
+        <div className="claim-form claim-form--success">
+          <p>✅ {result.message}</p>
+          <button type="button" className="claim-form-cancel" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      ) : (
+        <form className="claim-form" onSubmit={handleSubmit}>
+          <p className="claim-form-question">
+            <strong>Verification question:</strong> {foundReport.hidden_question || 'No question set for this report.'}
+          </p>
+
+          <label>
+            Your name
+            <input
+              type="text"
+              value={claimantName}
+              onChange={(e) => setClaimantName(e.target.value)}
+              required
+            />
+          </label>
+
+          <label>
+            Contact (phone/email, optional)
+            <input
+              type="text"
+              value={claimantContact}
+              onChange={(e) => setClaimantContact(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Your answer
+            <input
+              type="text"
+              value={hiddenAnswer}
+              onChange={(e) => setHiddenAnswer(e.target.value)}
+              required
+            />
+          </label>
+
+          {result && !result.verified && (
+            <p className="claim-form-error">{result.message}</p>
+          )}
+          {error && <p className="claim-form-error">{error}</p>}
+
+          <div className="claim-form-actions">
+            <button type="submit" disabled={submitting}>
+              {submitting ? 'Checking…' : 'Submit answer'}
+            </button>
+            <button type="button" className="claim-form-cancel" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * One candidate inside a disambiguation cluster (2+ matches that scored
+ * too close to auto-rank -- see DISAMBIGUATION_MARGIN in matches.py).
+ * Shows the counterpart report plus the backend's generated question, and
+ * lets the user forced-choice pick it as theirs -- no freeform answer to
+ * interpret, just POST /matches/{id}/disambiguate.
+ */
+function DisambiguationCandidate({ match, sourceId, onChosen }) {
+  const [counterpart, setCounterpart] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
+
+  useEffect(() => {
+    let cancelled = false;
+    getReport(counterpartId)
+      .then((r) => {
+        if (!cancelled) setCounterpart(r);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [counterpartId]);
+
+  async function handleChoose() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const updatedCluster = await disambiguateMatch(match.id);
+      onChosen(updatedCluster);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't record your choice.");
+      setSubmitting(false);
+    }
   }
 
   return (
-    <form className="claim-form" onSubmit={handleSubmit}>
-      <p className="claim-form-question">
-        <strong>Verification question:</strong> {foundReport.hidden_question || 'No question set for this report.'}
-      </p>
-
-      <label>
-        Your name
-        <input
-          type="text"
-          value={claimantName}
-          onChange={(e) => setClaimantName(e.target.value)}
-          required
-        />
-      </label>
-
-      <label>
-        Contact (phone/email, optional)
-        <input
-          type="text"
-          value={claimantContact}
-          onChange={(e) => setClaimantContact(e.target.value)}
-        />
-      </label>
-
-      <label>
-        Your answer
-        <input
-          type="text"
-          value={hiddenAnswer}
-          onChange={(e) => setHiddenAnswer(e.target.value)}
-          required
-        />
-      </label>
-
-      {result && !result.verified && (
-        <p className="claim-form-error">{result.message}</p>
+    <div className="disambig-candidate">
+      {loading ? (
+        <div className="thread-loading status-pulse">Loading…</div>
+      ) : counterpart ? (
+        <NoticeCard report={counterpart} compact />
+      ) : (
+        <div className="thread-loading">Couldn't load that report.</div>
       )}
+      {match.disambiguation_question && <p className="disambig-question">{match.disambiguation_question}</p>}
       {error && <p className="claim-form-error">{error}</p>}
+      <button type="button" className="disambig-choose" onClick={handleChoose} disabled={submitting}>
+        {submitting ? 'Confirming…' : 'This one →'}
+      </button>
+    </div>
+  );
+}
 
-      <div className="claim-form-actions">
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Checking…' : 'Submit answer'}
-        </button>
-        <button type="button" className="claim-form-cancel" onClick={() => setOpen(false)} disabled={submitting}>
-          Cancel
-        </button>
+/** Groups every NEEDS_DISAMBIGUATION match for this source report into one
+ * forced-choice prompt, shown above the regular ranked thread-list. */
+function DisambiguationPrompt({ matches, sourceId, onResolved }) {
+  return (
+    <div className="disambig-prompt">
+      <p className="disambig-heading">
+        A few candidates scored too close to auto-rank — which one is actually yours?
+      </p>
+      <div className="disambig-grid">
+        {matches.map((m) => (
+          <DisambiguationCandidate key={m.id} match={m} sourceId={sourceId} onChosen={onResolved} />
+        ))}
       </div>
-    </form>
+    </div>
   );
 }
 
 function ThreadRow({ match, sourceId, index, onClaimed }) {
   const [counterpart, setCounterpart] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [claimOpen, setClaimOpen] = useState(false);
 
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
-  const needsReview = match.status === 'NEEDS_DISAMBIGUATION' || match.status === 'needs_disambiguation';
+  const needsReview = isNeedsReview(match);
   const isConfirmed = match.status === 'CONFIRMED' || match.status === 'confirmed';
-  const pct = match.raw_score != null ? Math.round(match.raw_score * 100) : null;
+  const hasProbability = match.match_probability != null;
+  const pct = hasProbability
+    ? Math.round(match.match_probability * 100)
+    : match.raw_score != null
+      ? Math.round(match.raw_score * 100)
+      : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -139,20 +230,35 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
       className={`thread-row ${needsReview ? 'thread-row--review' : ''}`}
       style={{ '--card-index': index }}
     >
-      {loading ? (
-        <div className="thread-loading status-pulse">Loading counterpart report…</div>
-      ) : counterpart ? (
-        <>
-          <NoticeCard report={counterpart} compact />
-          {claimable && <ClaimForm match={match} foundReport={counterpart} onClaimed={onClaimed} />}
-          {isConfirmed && <p className="claim-form-success-note">✅ Already claimed and confirmed.</p>}
-        </>
-      ) : (
-        <div className="thread-loading">Couldn't load that report.</div>
+      <div className="thread-row-content">
+        {loading ? (
+          <div className="thread-loading status-pulse">Loading counterpart report…</div>
+        ) : counterpart ? (
+          <>
+            <NoticeCard
+              report={counterpart}
+              compact
+              primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
+            />
+            {isConfirmed && <p className="claim-form-success-note">✅ Already claimed and confirmed.</p>}
+          </>
+        ) : (
+          <div className="thread-loading">Couldn't load that report.</div>
+        )}
+      </div>
+
+      {claimOpen && (
+        // onClaimed only refreshes the source report's status badge -- the
+        // modal stays open so the user sees the "Verified!" message and
+        // closes it themselves (via the Close button, Escape, or backdrop).
+        <ClaimModal match={match} foundReport={counterpart} onClaimed={onClaimed} onClose={() => setClaimOpen(false)} />
       )}
 
       <div className="thread-connector">
-        <span className={`score-pill ${needsReview ? 'score-pill--warn' : ''} mono`}>
+        <span
+          className={`score-pill ${needsReview ? 'score-pill--warn' : ''} ${!hasProbability && pct != null ? 'score-pill--estimated' : ''} mono`}
+          title={!hasProbability && pct != null ? 'Estimated from raw score — not yet calibrated against confirmed matches' : undefined}
+        >
           {needsReview ? 'Needs review' : pct != null ? `${pct}%` : '—'}
         </span>
         {match.used_signals?.length > 0 && (
@@ -178,6 +284,16 @@ export default function Matches() {
     getReport(reportId)
       .then((r) => setSourceReport(r))
       .catch(() => {});
+  }
+
+  // The disambiguate endpoint returns the resolved cluster (chosen ->
+  // CANDIDATE, the rest -> REJECTED) -- merge it into local state instead
+  // of re-running findMatches, for the same reason refreshSourceReport
+  // avoids it (would spam duplicate Match rows).
+  function handleDisambiguationResolved(updatedCluster) {
+    setMatches((current) =>
+      current.map((m) => updatedCluster.find((u) => u.id === m.id) ?? m)
+    );
   }
 
   useEffect(() => {
@@ -232,13 +348,28 @@ export default function Matches() {
         </p>
       )}
 
-      {matches && matches.length > 0 && (
-        <div className="thread-list">
-          {matches.map((m, i) => (
-            <ThreadRow key={m.id} match={m} sourceId={reportId} index={i} onClaimed={refreshSourceReport} />
-          ))}
-        </div>
-      )}
+      {matches && matches.length > 0 && (() => {
+        const disambiguationCluster = matches.filter(isNeedsReview);
+        const normalMatches = matches.filter((m) => !isNeedsReview(m) && !isRejected(m));
+        return (
+          <>
+            {disambiguationCluster.length > 0 && (
+              <DisambiguationPrompt
+                matches={disambiguationCluster}
+                sourceId={reportId}
+                onResolved={handleDisambiguationResolved}
+              />
+            )}
+            {normalMatches.length > 0 && (
+              <div className="thread-list">
+                {normalMatches.map((m, i) => (
+                  <ThreadRow key={m.id} match={m} sourceId={reportId} index={i} onClaimed={refreshSourceReport} />
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
