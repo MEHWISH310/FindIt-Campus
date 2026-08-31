@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="FindIt Campus">
+  <rect x="0" y="0" width="24" height="24" rx="5" fill="#024336"/>
+  <circle cx="10" cy="10" r="6.25" fill="none" stroke="#efeee4" stroke-width="2.5"/>
+  <line x1="14.5" y1="14.5" x2="19.5" y2="19.5" stroke="#efeee4" stroke-width="2.75" stroke-linecap="round"/>
+</svg>
