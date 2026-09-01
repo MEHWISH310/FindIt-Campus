@@ -24,6 +24,21 @@ class Settings(BaseSettings):
     # Where uploaded report photos get saved on disk (swap for S3/Cloudinary later)
     upload_dir: str = "uploads"
 
+    # Base URL of the deployed frontend -- used to build the link a QR tag
+    # encodes (GET /reports/{id}/qr-code). Must be set to the real deployed
+    # URL in production; localhost is fine for dev.
+    frontend_base_url: str = "http://localhost:5173"
+
+    # SMTP -- blank by default so local dev without real credentials still
+    # works (core/email.py falls back to printing the email to the
+    # console). Set these in your real .env once you have them; see
+    # core/email.py's docstring for how to get a Gmail app password.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+
     class Config:
         env_file = ".env"
 

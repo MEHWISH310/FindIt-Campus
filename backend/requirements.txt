@@ -14,3 +14,5 @@ python-multipart==0.0.9
 pydantic-settings>=2.5.0
 tf-keras
 python-socketio==5.11.4
+qrcode[pil]==7.4.2
+PyJWT==2.9.0

@@ -8,9 +8,11 @@ never gets created.
 from app.models.report import Report, ReportType, ReportStatus
 from app.models.match import Match, MatchStatus
 from app.models.custody import CustodyRecord
+from app.models.user import User
 
 __all__ = [
     "Report", "ReportType", "ReportStatus",
     "Match", "MatchStatus",
     "CustodyRecord",
+    "User",
 ]
