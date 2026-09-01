@@ -29,6 +29,7 @@ from app.models.report import (
     STALE_DAYS_THRESHOLD,
     ESCALATION_DAYS_THRESHOLD,
 )
+from app.models.match import Match
 from app.routers.schemas import ReportCreate, ReportOut
 from app.matching.embeddings import encode_text, encode_images
 from app.matching.redaction import redact_photo, originals_dir
@@ -136,6 +137,34 @@ def get_report(report_id: str, db: Session = Depends(get_db)):
     if not report:
         raise HTTPException(404, "Report not found")
     return report
+
+
+@router.delete("/{report_id}")
+def delete_report(
+    report_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Lets a reporter delete their own lost/found report. Only the person
+    who created it (reporter_id match) can delete it -- not just anyone
+    who's logged in. Related Match rows are deleted first since they have
+    a foreign key back to reports.id.
+    """
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(404, "Report not found")
+
+    if report.reporter_id != user.id:
+        raise HTTPException(403, "You can only delete your own reports")
+
+    db.query(Match).filter(
+        (Match.lost_report_id == report.id) | (Match.found_report_id == report.id)
+    ).delete(synchronize_session=False)
+
+    db.delete(report)
+    db.commit()
+    return {"message": "Report deleted."}
 
 
 @router.post("/escalate-stale", response_model=List[ReportOut])

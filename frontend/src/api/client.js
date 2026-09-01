@@ -215,6 +215,18 @@ export function changePassword(oldPassword, newPassword) {
   });
 }
 
+export async function deleteReport(reportId, token) {
+  const res = await fetch(`${API_BASE}/reports/${reportId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.detail || 'Could not delete report.');
+  }
+  return res.json();
+}
+
 /** GET /auth/me */
 export function getMe() {
   return request('/auth/me');
