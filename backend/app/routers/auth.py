@@ -1,17 +1,26 @@
 """
 Auth endpoints.
 
-Accounts are pre-seeded (see seed_users.py) -- there's no public
-"create account" endpoint here on purpose; only people already added to
-the users table can get in. Flow for a first-time (or password-reset)
-login:
+Two ways an account can exist:
+  1. Admin pre-seeds a row (see seed_users.py / a future admin-add-user
+     tool) with just an email -- registration_number left blank.
+  2. A student signs up themselves via POST /auth/request-access with an
+     email that has no existing row at all -- a fresh account is created
+     right there.
 
-  1. POST /auth/request-access {email, registration_number} -- must
-     already exist in the DB (admin-added row) and be a
-     @vitstudent.ac.in address. First submission for that email claims
-     the registration_number; later ones must match it. Generates a
-     temp password, emails it (see core/email.py), marks the account
-     must_set_password.
+Either way, the account starts with no password (password_hash null,
+must_set_password true). Full flow:
+
+  1. POST /auth/request-access {email, registration_number}
+     - Must be a @vitstudent.ac.in address.
+     - If no row exists for the email, creates one (this is what makes
+       self-signup possible).
+     - If a row exists with no registration_number yet (admin-seeded),
+       this submission claims it.
+     - If a row exists with a registration_number already set, this
+       submission must match it exactly, or it's rejected.
+     Either way, on success generates a temp password, emails it (see
+     core/email.py), and marks the account must_set_password.
   2. POST /auth/login {email, password}  -- works with the temp password
      too. Always returns a JWT; must_set_password in the response tells
      the frontend whether to force a "set new password" screen before
@@ -20,6 +29,13 @@ login:
      from step 2 works even though must_set_password is still true --
      this is the one action they're allowed to take before setting a
      real password). Clears must_set_password.
+
+Note on identity: registration_number alone isn't proof of anything --
+anyone could type in someone else's. The real verification is the email
+loop: only whoever controls the @vitstudent.ac.in inbox ever sees the
+temp password, so only they can actually log in. registration_number is
+just there to (a) let admin-seeded rows get filled in by the right
+person, and (b) catch someone fat-fingering their own number.
 """
 
 from typing import Optional
@@ -157,17 +173,15 @@ def _issue_temp_password(user: User, db: Session, reason: str) -> None:
 
 @router.post("/request-access")
 def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db)):
-    """First-time setup ("signup") for someone whose account was already
-    added by an admin (see seed_users.py / a future admin-add-user tool)
-    but who has never logged in.
+    """
+    Signup / first-time access for a @vitstudent.ac.in email.
 
-    Admin adds a row with just an email (registration_number left blank).
-    The real student then "claims" it here with their email +
-    registration_number -- whichever pair is submitted first is recorded
-    as that account's registration_number permanently. On every later
-    call for the same email, the registration_number must match what was
-    claimed, or this rejects it (stops someone else re-claiming the same
-    email with a different registration number).
+    - If a row already exists for the email (admin-seeded, or a previous
+      partial signup) with no registration_number yet, this claims it.
+    - If a row exists with a registration_number already set, this must
+      match it, or the request is rejected.
+    - If NO row exists at all, a brand-new account is created here --
+      this is what makes self-signup possible instead of admin-only.
     """
     email = payload.email.strip().lower()
     reg_number = payload.registration_number.strip()
@@ -177,13 +191,20 @@ def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db))
         raise HTTPException(400, "Registration number is required.")
 
     user = db.query(User).filter(User.email == email).first()
-    if not user:
-        # Deliberately vague about *why* -- doesn't confirm/deny whether
-        # an email is registered, so this can't be used to enumerate the
-        # user list.
-        raise HTTPException(404, "No account found for this email. Ask an admin to add you.")
 
-    if not user.registration_number:
+    if user is None:
+        # Brand-new student, no admin-seeded row -- make sure this
+        # registration number isn't already tied to a different account
+        # before creating a fresh one.
+        existing_reg = db.query(User).filter(User.registration_number == reg_number).first()
+        if existing_reg:
+            raise HTTPException(400, "That registration number is already registered to an account.")
+
+        user = User(email=email, registration_number=reg_number)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    elif not user.registration_number:
         # First person to submit this email claims the registration
         # number that goes with it.
         user.registration_number = reg_number
@@ -207,8 +228,9 @@ def forgot_password(payload: ForgotPasswordPayload, db: Session = Depends(get_db
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        # Same deliberately-vague response as request_access -- never
-        # confirm/deny whether an email is registered.
+        # Deliberately vague about *why* -- doesn't confirm/deny whether
+        # an email is registered, so this can't be used to enumerate the
+        # user list.
         raise HTTPException(404, "No account found for this email. Ask an admin to add you.")
 
     _issue_temp_password(user, db, reason="You requested a password reset for your FindIt Campus account.")

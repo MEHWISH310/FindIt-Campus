@@ -1,17 +1,21 @@
 """
 User = a college member's account.
 
-Auth model, per how this is actually being rolled out: accounts are
-PRE-SEEDED (see seed_users.py), not self-signup -- there's no public
-"create account" endpoint. A pre-seeded user starts with no password
-(password_hash is null, must_set_password is true). They request one by
-email (POST /auth/request-access), get a temp password mailed to them,
-log in with it, then are forced to set a real password
-(POST /auth/set-password) before doing anything else.
+Two ways an account row gets created:
+  1. Admin pre-seeds it (see seed_users.py / a future admin-add-user
+     tool) with just an email -- registration_number left blank.
+  2. A student self-signs-up via POST /auth/request-access with an email
+     that has no existing row -- a fresh row is created right there.
 
-registration_number is nullable on purpose -- seeded accounts start with
-it blank and it gets filled in later via the profile endpoint
-(PATCH /auth/me), once the real roster of registration numbers is ready.
+Either way, the account starts with no password (password_hash null,
+must_set_password true). They request one by email
+(POST /auth/request-access), get a temp password mailed to them, log in
+with it, then are forced to set a real password (POST /auth/set-password)
+before doing anything else.
+
+registration_number is nullable: for admin-seeded accounts it's blank
+until claimed via /auth/request-access; for self-signed-up accounts it's
+set immediately at creation time.
 """
 
 import uuid
@@ -23,7 +27,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from app.db.session import Base
 
 # Only this college's email domain is accepted, everywhere a User is
-# created -- seed_users.py, and any future admin "add user" endpoint.
+# created -- seed_users.py, /auth/request-access, and any future admin
+# "add user" endpoint.
 ALLOWED_EMAIL_DOMAIN = "vitstudent.ac.in"
 
 
