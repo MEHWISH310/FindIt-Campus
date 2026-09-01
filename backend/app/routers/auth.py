@@ -6,9 +6,12 @@ Accounts are pre-seeded (see seed_users.py) -- there's no public
 the users table can get in. Flow for a first-time (or password-reset)
 login:
 
-  1. POST /auth/request-access {email}   -- must already exist in the DB
-     and be a @vitstudent.ac.in address. Generates a temp password,
-     emails it (see core/email.py), marks the account must_set_password.
+  1. POST /auth/request-access {email, registration_number} -- must
+     already exist in the DB (admin-added row) and be a
+     @vitstudent.ac.in address. First submission for that email claims
+     the registration_number; later ones must match it. Generates a
+     temp password, emails it (see core/email.py), marks the account
+     must_set_password.
   2. POST /auth/login {email, password}  -- works with the temp password
      too. Always returns a JWT; must_set_password in the response tells
      the frontend whether to force a "set new password" screen before
@@ -42,6 +45,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class RequestAccessPayload(BaseModel):
     email: str
+    registration_number: str
 
 
 class ForgotPasswordPayload(BaseModel):
@@ -128,7 +132,7 @@ def get_current_user_optional(
 
 
 def _issue_temp_password(user: User, db: Session, reason: str) -> None:
-    """Shared by /request-access (first-time login) and /forgot-password
+    """Shared by /request-access (first-time signup) and /forgot-password
     (already used the app, forgot their password) -- both are really the
     same action: mint a fresh temp password, email it, force a
     set-password screen on next login."""
@@ -153,11 +157,24 @@ def _issue_temp_password(user: User, db: Session, reason: str) -> None:
 
 @router.post("/request-access")
 def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db)):
-    """First-time login: account exists (pre-seeded) but they've never
-    logged in / don't have a password yet."""
+    """First-time setup ("signup") for someone whose account was already
+    added by an admin (see seed_users.py / a future admin-add-user tool)
+    but who has never logged in.
+
+    Admin adds a row with just an email (registration_number left blank).
+    The real student then "claims" it here with their email +
+    registration_number -- whichever pair is submitted first is recorded
+    as that account's registration_number permanently. On every later
+    call for the same email, the registration_number must match what was
+    claimed, or this rejects it (stops someone else re-claiming the same
+    email with a different registration number).
+    """
     email = payload.email.strip().lower()
+    reg_number = payload.registration_number.strip()
     if not is_college_email(email):
         raise HTTPException(400, f"Only @{ALLOWED_EMAIL_DOMAIN} email addresses can be used.")
+    if not reg_number:
+        raise HTTPException(400, "Registration number is required.")
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -165,6 +182,13 @@ def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db))
         # an email is registered, so this can't be used to enumerate the
         # user list.
         raise HTTPException(404, "No account found for this email. Ask an admin to add you.")
+
+    if not user.registration_number:
+        # First person to submit this email claims the registration
+        # number that goes with it.
+        user.registration_number = reg_number
+    elif user.registration_number != reg_number:
+        raise HTTPException(400, "That registration number doesn't match our records for this email.")
 
     _issue_temp_password(user, db, reason="You requested access to your FindIt Campus account.")
     return {"message": "A temporary password has been emailed to you."}
@@ -176,7 +200,7 @@ def forgot_password(payload: ForgotPasswordPayload, db: Session = Depends(get_db
     password. Same mechanism as request_access (fresh temp password by
     email, forced set-password on next login) -- kept as a separate route
     so the frontend can show a distinct "Forgot password" screen with its
-    own copy, separate from the first-time "Request access" screen."""
+    own copy, separate from the first-time "Sign up" screen."""
     email = payload.email.strip().lower()
     if not is_college_email(email):
         raise HTTPException(400, f"Only @{ALLOWED_EMAIL_DOMAIN} email addresses can be used.")

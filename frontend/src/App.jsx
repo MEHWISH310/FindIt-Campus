@@ -22,14 +22,45 @@ export default function App() {
         <Header />
         <NotificationToast />
         <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/lost" element={<Dashboard reportType="lost" />} />
-          <Route path="/found" element={<Dashboard reportType="found" />} />
-          <Route path="/claimed" element={<ClaimedItems />} />
-
+          {/* Public: only the auth pages themselves. Everything else --
+              including the landing page -- requires login, so someone
+              hitting "/" logged out is bounced straight to /login. */}
           <Route path="/login" element={<Login />} />
           <Route path="/request-access" element={<RequestAccess />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Landing />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/lost"
+            element={
+              <ProtectedRoute>
+                <Dashboard reportType="lost" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/found"
+            element={
+              <ProtectedRoute>
+                <Dashboard reportType="found" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/claimed"
+            element={
+              <ProtectedRoute>
+                <ClaimedItems />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/set-password"
             element={
@@ -46,11 +77,6 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-
-          {/* Reporting and viewing matches both need to know who the
-              logged-in user is (reporter_id gets stamped server-side,
-              and contact-reveal gating needs the JWT), so both are
-              behind ProtectedRoute. */}
           <Route
             path="/report/:type"
             element={

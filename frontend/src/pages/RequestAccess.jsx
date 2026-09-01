@@ -2,8 +2,16 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { requestAccess, ApiError } from '../api/client';
 
+/**
+ * First-time "signup" for a student whose account row was already added
+ * by an admin (email only, no password) but who's never logged in. They
+ * prove they're the right person by supplying their registration number
+ * -- whichever number is submitted first for a given email is what gets
+ * recorded against it (see backend/app/routers/auth.py's request_access).
+ */
 export default function RequestAccess() {
   const [email, setEmail] = useState('');
+  const [registrationNumber, setRegistrationNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
@@ -13,7 +21,7 @@ export default function RequestAccess() {
     setError(null);
     setSubmitting(true);
     try {
-      await requestAccess(email.trim().toLowerCase());
+      await requestAccess(email.trim().toLowerCase(), registrationNumber.trim().toUpperCase());
       setSent(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not send access email.');
@@ -25,16 +33,17 @@ export default function RequestAccess() {
   return (
     <div className="report-page">
       <div className="report-card">
-        <h1 className="report-heading">Request access</h1>
+        <h1 className="report-heading">Sign up</h1>
         <p className="verification-note">
-          For students who already have an account on FindIt Campus but have never logged in
-          yet. Enter your @vitstudent.ac.in email and we'll send you a temporary password.
+          For students already added to FindIt Campus by an admin but who haven't logged in
+          yet. Enter your @vitstudent.ac.in email and registration number -- we'll send you a
+          temporary password.
         </p>
 
         {sent ? (
           <p className="claim-form-success-note">
-            ✅ If that email has an account, a temporary password has been sent. Check your
-            inbox, then <Link to="/login">log in</Link>.
+            ✅ If that email/registration number is on file, a temporary password has been sent.
+            Check your inbox, then <Link to="/login">log in</Link>.
           </p>
         ) : (
           <form onSubmit={handleSubmit} className="report-card" style={{ padding: 0, boxShadow: 'none', border: 'none' }}>
@@ -46,6 +55,17 @@ export default function RequestAccess() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you.2023@vitstudent.ac.in"
+              />
+            </label>
+
+            <label className="field">
+              <span>Registration number</span>
+              <input
+                type="text"
+                required
+                value={registrationNumber}
+                onChange={(e) => setRegistrationNumber(e.target.value)}
+                placeholder="23BCE0000"
               />
             </label>
 

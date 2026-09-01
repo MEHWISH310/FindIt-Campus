@@ -174,11 +174,12 @@ export { ApiError };
 
 // --- Auth ---------------------------------------------------------------
 
-/** POST /auth/request-access — first-time login, no password set yet. */
-export function requestAccess(email) {
+/** POST /auth/request-access — first-time signup: claims/verifies the
+ * registration number against a pre-added account row. */
+export function requestAccess(email, registrationNumber) {
   return request('/auth/request-access', {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, registration_number: registrationNumber }),
   });
 }
 
