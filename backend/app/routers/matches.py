@@ -21,17 +21,28 @@ import joblib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from typing import Optional
+
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.report import Report, ReportType, ReportStatus
 from app.models.match import Match, MatchStatus
 from app.models.custody import CustodyRecord
-from app.routers.schemas import MatchOut, ClaimRequest, ClaimResponse
+from app.models.user import User
+from app.routers.schemas import (
+    MatchOut,
+    ClaimRequest,
+    ClaimResponse,
+    FoundContactOut,
+    ClaimantInfoOut,
+)
 from app.matching.embeddings import cosine_sim
 from app.matching.fusion import ReportSignals, composite_score, competing_cluster
 from app.matching.calibration import MatchCalibrator
 from app.matching.redaction import reveal_photos
 from app.realtime import sio
+from app.core.email import send_email
+from app.routers.auth import get_current_user_optional
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -76,6 +87,51 @@ def _haversine_meters(lat1, lon1, lat2, lon2) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def _build_match_out(match: Match, db: Session, user: Optional[User]) -> MatchOut:
+    """
+    Assembles a MatchOut with found_contact / claimant_info filled in only
+    when the requester is authorized to see them:
+
+      - found_contact (the FOUND reporter's email/phone): only once the
+        match is CONFIRMED, and only for the LOST reporter -- "found wale
+        ki details lost wale ko tabhi dikhni chahiye jab usne claim ka
+        question sahi answer kiya ho".
+      - claimant_info (who claimed it): only once the match is CONFIRMED,
+        and only for the FOUND reporter -- so the finder can see who
+        claimed their item and its handover record.
+
+    Anonymous requests (user is None) never get either field, regardless
+    of match status.
+    """
+    out = MatchOut.model_validate(match)
+    if not user or match.status != MatchStatus.CONFIRMED:
+        return out
+
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+
+    if lost_report and lost_report.reporter_id == user.id and found_report:
+        finder = db.query(User).filter(User.id == found_report.reporter_id).first()
+        if finder:
+            out.found_contact = FoundContactOut(name=finder.name, email=finder.email, phone=finder.phone)
+
+    if found_report and found_report.reporter_id == user.id:
+        record = (
+            db.query(CustodyRecord)
+            .filter(CustodyRecord.match_id == match.id)
+            .order_by(CustodyRecord.handover_datetime.desc())
+            .first()
+        )
+        if record:
+            out.claimant_info = ClaimantInfoOut(
+                claimant_name=record.claimant_name,
+                claimant_contact=record.claimant_contact,
+                handover_datetime=record.handover_datetime,
+            )
+
+    return out
+
+
 def _disambiguation_question(candidate: Report) -> str:
     """
     Rule-based, deterministic question surfacing the candidate's own
@@ -89,6 +145,23 @@ def _disambiguation_question(candidate: Report) -> str:
     where = candidate.location_name or "an unspecified location"
     when = candidate.item_datetime.strftime("%b %d, %I:%M %p") if candidate.item_datetime else "an unspecified time"
     return f"A {descriptor} found near {where} around {when} -- is this yours?"
+
+
+@router.get("/{match_id}", response_model=MatchOut)
+def get_match(
+    match_id: str,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
+    """Fetch a single match. Logged in as the lost reporter of a CONFIRMED
+    match -> found_contact is filled in. Logged in as the found reporter
+    of a CONFIRMED match -> claimant_info is filled in. Everyone else
+    (including anonymous callers) gets both as null -- see
+    _build_match_out."""
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+    return _build_match_out(match, db, user)
 
 
 @router.post("/find/{report_id}", response_model=List[MatchOut])
@@ -162,23 +235,52 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     # Real-time "match found" ping -- only for a genuinely strong top
     # candidate, so this doesn't fire for every low-confidence guess.
     if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD:
-        top_probability = _calibrator.predict_proba(scored[0][1]["score"]) if _calibrator else None
+        top_candidate, top_result = scored[0]
+        top_probability = _calibrator.predict_proba(top_result["score"]) if _calibrator else None
         await sio.emit(
             "match:found",
             {
                 "report_id": str(report.id),
                 "report_title": report.title,
-                "score": round(scored[0][1]["score"], 3),
+                "score": round(top_result["score"], 3),
                 "probability": round(top_probability, 3) if top_probability is not None else None,
                 "needs_disambiguation": needs_disambiguation,
             },
         )
 
+        # Email the LOST-side reporter -- whichever of report/top_candidate
+        # is the lost report, since they're the one who should hear "a
+        # similar item was found", regardless of which side triggered this
+        # search. Best-effort: a missing reporter_id/user (e.g. an older
+        # report from before auth was wired up) just means no email, not
+        # an error for the caller.
+        lost_report = report if report.report_type == ReportType.LOST else top_candidate
+        if lost_report.reporter_id:
+            lost_reporter = db.query(User).filter(User.id == lost_report.reporter_id).first()
+            if lost_reporter:
+                send_email(
+                    to_email=lost_reporter.email,
+                    subject="A possible match was found for your lost item",
+                    body=(
+                        f"Hi {lost_reporter.name or ''},\n\n"
+                        f"An item similar to what you reported lost (\"{lost_report.title}\") "
+                        "has been found and matched by FindIt Campus.\n\n"
+                        f"Check the site for details: {settings.frontend_base_url}/matches/{lost_report.id}\n\n"
+                        "If it looks right, you can claim it there by answering the "
+                        "finder's verification question."
+                    ),
+                )
+
     return saved_matches
 
 
 @router.post("/{match_id}/verify", response_model=ClaimResponse)
-async def verify_claim(match_id: str, payload: ClaimRequest, db: Session = Depends(get_db)):
+async def verify_claim(
+    match_id: str,
+    payload: ClaimRequest,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
     """
     Asymmetric verification (per your abstract): whoever is claiming the
     item must answer the FOUND report's hidden_question correctly -- we
@@ -222,7 +324,7 @@ async def verify_claim(match_id: str, payload: ClaimRequest, db: Session = Depen
         return ClaimResponse(
             verified=False,
             message="That answer doesn't match. You can try again.",
-            match=match,
+            match=_build_match_out(match, db, user),
             custody_record=None,
         )
 
@@ -261,10 +363,30 @@ async def verify_claim(match_id: str, payload: ClaimRequest, db: Session = Depen
         },
     )
 
+    # Email the FOUND-side reporter that someone has claimed their item --
+    # per the flow, the finder never sees the claimant's details in the
+    # email itself, only that a claim happened; they view the actual name
+    # /contact on the site (GET /matches/{id}, gated to them once
+    # CONFIRMED -- see _build_match_out).
+    if found_report.reporter_id:
+        finder = db.query(User).filter(User.id == found_report.reporter_id).first()
+        if finder:
+            send_email(
+                to_email=finder.email,
+                subject="Someone claimed the item you found",
+                body=(
+                    f"Hi {finder.name or ''},\n\n"
+                    f"A person has claimed the item you reported found (\"{found_report.title}\") "
+                    "and correctly answered your verification question.\n\n"
+                    f"See their details on the site: {settings.frontend_base_url}/matches/{lost_report.id}\n\n"
+                    "Thanks for helping return it!"
+                ),
+            )
+
     return ClaimResponse(
         verified=True,
         message="Verified! This item has been marked as returned to its owner.",
-        match=match,
+        match=_build_match_out(match, db, user),
         custody_record=record,
     )
 

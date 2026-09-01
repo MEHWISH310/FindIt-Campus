@@ -44,12 +44,21 @@ class RequestAccessPayload(BaseModel):
     email: str
 
 
+class ForgotPasswordPayload(BaseModel):
+    email: str
+
+
 class LoginPayload(BaseModel):
     email: str
     password: str
 
 
 class SetPasswordPayload(BaseModel):
+    new_password: str
+
+
+class ChangePasswordPayload(BaseModel):
+    old_password: str
     new_password: str
 
 
@@ -103,8 +112,49 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
     return user
 
 
+def get_current_user_optional(
+    authorization: Optional[str] = Header(None), db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Same as get_current_user, but returns None instead of raising for
+    anonymous/invalid requests. Used by endpoints like GET /matches/{id}
+    that work for anyone but reveal extra gated fields only when the
+    caller is logged in and authorized -- see matches.py."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    user_id = decode_access_token(authorization.removeprefix("Bearer ").strip())
+    if not user_id:
+        return None
+    return db.query(User).filter(User.id == user_id).first()
+
+
+def _issue_temp_password(user: User, db: Session, reason: str) -> None:
+    """Shared by /request-access (first-time login) and /forgot-password
+    (already used the app, forgot their password) -- both are really the
+    same action: mint a fresh temp password, email it, force a
+    set-password screen on next login."""
+    temp_password = generate_temp_password()
+    user.password_hash = hash_password(temp_password)
+    user.must_set_password = "true"
+    db.commit()
+
+    send_email(
+        to_email=user.email,
+        subject="Your FindIt Campus login",
+        body=(
+            "Hi,\n\n"
+            f"{reason}\n\n"
+            f"Your temporary password is: {temp_password}\n\n"
+            "Log in with this at the FindIt Campus site -- you'll be asked "
+            "to set a real password right away, before you can do anything else.\n\n"
+            "If you didn't request this, you can ignore this email."
+        ),
+    )
+
+
 @router.post("/request-access")
 def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db)):
+    """First-time login: account exists (pre-seeded) but they've never
+    logged in / don't have a password yet."""
     email = payload.email.strip().lower()
     if not is_college_email(email):
         raise HTTPException(400, f"Only @{ALLOWED_EMAIL_DOMAIN} email addresses can be used.")
@@ -116,23 +166,29 @@ def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db))
         # user list.
         raise HTTPException(404, "No account found for this email. Ask an admin to add you.")
 
-    temp_password = generate_temp_password()
-    user.password_hash = hash_password(temp_password)
-    user.must_set_password = "true"
-    db.commit()
-
-    send_email(
-        to_email=user.email,
-        subject="Your FindIt Campus login",
-        body=(
-            "Hi,\n\n"
-            f"Your temporary password is: {temp_password}\n\n"
-            "Log in with this at the FindIt Campus site -- you'll be asked "
-            "to set a real password right away, before you can do anything else.\n\n"
-            "If you didn't request this, you can ignore this email."
-        ),
-    )
+    _issue_temp_password(user, db, reason="You requested access to your FindIt Campus account.")
     return {"message": "A temporary password has been emailed to you."}
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordPayload, db: Session = Depends(get_db)):
+    """Already has an account and has logged in before, but forgot their
+    password. Same mechanism as request_access (fresh temp password by
+    email, forced set-password on next login) -- kept as a separate route
+    so the frontend can show a distinct "Forgot password" screen with its
+    own copy, separate from the first-time "Request access" screen."""
+    email = payload.email.strip().lower()
+    if not is_college_email(email):
+        raise HTTPException(400, f"Only @{ALLOWED_EMAIL_DOMAIN} email addresses can be used.")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # Same deliberately-vague response as request_access -- never
+        # confirm/deny whether an email is registered.
+        raise HTTPException(404, "No account found for this email. Ask an admin to add you.")
+
+    _issue_temp_password(user, db, reason="You requested a password reset for your FindIt Campus account.")
+    return {"message": "A temporary password has been emailed to you. Log in with it, then set a new password."}
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -166,6 +222,27 @@ def set_password(
     user.must_set_password = "false"
     db.commit()
     return {"message": "Password updated."}
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordPayload,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """For someone already logged in who wants to change their password
+    on purpose (as opposed to /set-password, which is specifically the
+    forced first-login/post-reset flow). Requires the current password so
+    someone who grabs an already-open session can't lock the real owner
+    out just by changing it."""
+    if not user.password_hash or not verify_password(payload.old_password, user.password_hash):
+        raise HTTPException(401, "Current password is incorrect.")
+    if len(payload.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters.")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "Password changed."}
 
 
 @router.get("/me", response_model=UserOut)

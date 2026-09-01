@@ -21,9 +21,29 @@ class ApiError extends Error {
   }
 }
 
+// --- Auth token storage -----------------------------------------------
+// Kept in localStorage (not sessionStorage) so logging in once survives
+// closing the tab -- this is a real deployed app, not a Claude.ai
+// artifact, so localStorage is the right, normal choice here.
+const TOKEN_KEY = 'findit:auth_token';
+
+export function getStoredToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+export function setAuthToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+export function clearAuthToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 async function request(path, options = {}) {
+  const token = getStoredToken();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     ...options,
   });
 
@@ -151,3 +171,64 @@ export function disambiguateMatch(matchId) {
 }
 
 export { ApiError };
+
+// --- Auth ---------------------------------------------------------------
+
+/** POST /auth/request-access — first-time login, no password set yet. */
+export function requestAccess(email) {
+  return request('/auth/request-access', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** POST /auth/forgot-password — already has an account, forgot the password. */
+export function forgotPassword(email) {
+  return request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** POST /auth/login — returns { access_token, must_set_password, user }. */
+export function login(email, password) {
+  return request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/** POST /auth/set-password — forced first-login / post-reset password set. */
+export function setPassword(newPassword) {
+  return request('/auth/set-password', {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+}
+
+/** POST /auth/change-password — voluntary change, requires the old password. */
+export function changePassword(oldPassword, newPassword) {
+  return request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+}
+
+/** GET /auth/me */
+export function getMe() {
+  return request('/auth/me');
+}
+
+/** PATCH /auth/me — update name/phone/registration_number. */
+export function updateMe(payload) {
+  return request('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** GET /matches/{match_id} — single match, with found_contact/claimant_info
+ * filled in when the logged-in user is authorized to see them. */
+export function getMatch(matchId) {
+  return request(`/matches/${matchId}`);
+}

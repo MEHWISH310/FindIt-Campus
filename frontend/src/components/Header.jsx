@@ -2,9 +2,11 @@ import { NavLink } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
 import ThemeToggle from './ThemeToggle';
 import { listReports, REPORTS_CHANGED_EVENT } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 export default function Header() {
   const [counts, setCounts] = useState({ lost: null, found: null });
+  const { user, logout } = useAuth();
 
   const refreshCounts = useCallback(() => {
     Promise.all([listReports('lost'), listReports('found')])
@@ -60,6 +62,21 @@ export default function Header() {
             Report found
           </NavLink>
           <ThemeToggle />
+
+          {user ? (
+            <div className="site-actions" style={{ gap: 8 }}>
+              <NavLink to="/change-password" title={user.email} className="header-btn">
+                {user.name || user.email.split('@')[0]}
+              </NavLink>
+              <button type="button" className="header-btn" onClick={logout}>
+                Log out
+              </button>
+            </div>
+          ) : (
+            <NavLink to="/login" className="header-btn">
+              Log in
+            </NavLink>
+          )}
         </div>
       </div>
     </header>

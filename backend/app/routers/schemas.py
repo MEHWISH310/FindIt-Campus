@@ -69,6 +69,24 @@ class ReportOut(BaseModel):
         from_attributes = True
 
 
+class FoundContactOut(BaseModel):
+    """The FOUND reporter's contact details -- only ever attached to a
+    MatchOut when the requester is the LOST reporter AND the match is
+    CONFIRMED (see matches.py's get_current_user_optional + the
+    found_contact assembly in GET /matches/{match_id})."""
+    name: Optional[str]
+    email: str
+    phone: Optional[str]
+
+
+class ClaimantInfoOut(BaseModel):
+    """Who claimed the item -- only ever attached to a MatchOut when the
+    requester is the FOUND reporter AND the match is CONFIRMED."""
+    claimant_name: str
+    claimant_contact: Optional[str]
+    handover_datetime: datetime
+
+
 class MatchOut(BaseModel):
     id: UUID
     lost_report_id: UUID
@@ -81,6 +99,10 @@ class MatchOut(BaseModel):
     # matches.py's competing_cluster()) -- the frontend shows this as a
     # forced-choice question instead of just a bare score. Null otherwise.
     disambiguation_question: Optional[str] = None
+    # Both null unless the requester is authorized to see them -- see the
+    # FoundContactOut / ClaimantInfoOut docstrings above.
+    found_contact: Optional[FoundContactOut] = None
+    claimant_info: Optional[ClaimantInfoOut] = None
 
     class Config:
         from_attributes = True

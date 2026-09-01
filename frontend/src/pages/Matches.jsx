@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getReport, findMatches, claimMatch, disambiguateMatch, ApiError } from '../api/client';
+import { getReport, getMatch, findMatches, claimMatch, disambiguateMatch, ApiError } from '../api/client';
 import NoticeCard from '../components/NoticeCard';
 import Modal from '../components/Modal';
 
@@ -196,6 +196,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
   const [counterpart, setCounterpart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [claimOpen, setClaimOpen] = useState(false);
+  const [gatedInfo, setGatedInfo] = useState(null); // { found_contact, claimant_info } | null
 
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
   const needsReview = isNeedsReview(match);
@@ -221,6 +222,24 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
     };
   }, [counterpartId]);
 
+  // Once a match is CONFIRMED, re-fetch it with auth attached -- the
+  // backend fills in found_contact (for the lost reporter) or
+  // claimant_info (for the found reporter) only for whichever side the
+  // logged-in user actually is; everyone else gets both as null, so this
+  // is safe to call regardless of who's viewing.
+  useEffect(() => {
+    if (!isConfirmed) return;
+    let cancelled = false;
+    getMatch(match.id)
+      .then((m) => {
+        if (!cancelled) setGatedInfo({ found_contact: m.found_contact, claimant_info: m.claimant_info });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isConfirmed, match.id]);
+
   // Claiming only makes sense against a FOUND report that's still open --
   // that's the side holding the hidden_question a claimant must answer.
   const claimable = counterpart?.report_type === 'found' && counterpart?.status === 'open' && !isConfirmed;
@@ -241,6 +260,19 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
               primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
             />
             {isConfirmed && <p className="claim-form-success-note">✅ Already claimed and confirmed.</p>}
+            {isConfirmed && gatedInfo?.found_contact && (
+              <div className="claim-form-success-note">
+                <strong>Finder's contact:</strong> {gatedInfo.found_contact.name || 'N/A'} —{' '}
+                {gatedInfo.found_contact.email}
+                {gatedInfo.found_contact.phone ? ` · ${gatedInfo.found_contact.phone}` : ''}
+              </div>
+            )}
+            {isConfirmed && gatedInfo?.claimant_info && (
+              <div className="claim-form-success-note">
+                <strong>Claimed by:</strong> {gatedInfo.claimant_info.claimant_name}
+                {gatedInfo.claimant_info.claimant_contact ? ` — ${gatedInfo.claimant_info.claimant_contact}` : ''}
+              </div>
+            )}
           </>
         ) : (
           <div className="thread-loading">Couldn't load that report.</div>
@@ -327,7 +359,7 @@ export default function Matches() {
       </Link>
 
       <h1 className={`matches-heading ${sourceReport ? '' : 'status-pulse'}`}>
-        {sourceReport ? <>Matches for “{sourceReport.title}”</> : 'Finding matches…'}
+        {sourceReport ? <>Matches for "{sourceReport.title}"</> : 'Finding matches…'}
       </h1>
 
       {sourceReport && (

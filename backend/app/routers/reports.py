@@ -33,6 +33,8 @@ from app.routers.schemas import ReportCreate, ReportOut
 from app.matching.embeddings import encode_text, encode_images
 from app.matching.redaction import redact_photo, originals_dir
 from app.realtime import sio
+from app.models.user import User
+from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -44,7 +46,11 @@ MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB per photo
 
 
 @router.post("/", response_model=ReportOut)
-async def create_report(payload: ReportCreate, db: Session = Depends(get_db)):
+async def create_report(
+    payload: ReportCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     if payload.report_type not in (ReportType.LOST.value, ReportType.FOUND.value):
         raise HTTPException(400, "report_type must be 'lost' or 'found'")
 
@@ -56,6 +62,7 @@ async def create_report(payload: ReportCreate, db: Session = Depends(get_db)):
         )
 
     report = Report(
+        reporter_id=user.id,
         report_type=payload.report_type,
         title=payload.title,
         description=payload.description,
