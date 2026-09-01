@@ -25,12 +25,18 @@ export default function NoticeCard({ report, compact = false, onFindMatches, pri
   const thumbnail = report.photo_paths?.[0];
   const isEscalated = report.status === 'escalated';
   const isResolved = report.status === 'resolved';
+  const photosRedacted = report.photos_redacted && thumbnail;
 
   return (
     <div className={`notice-card ${isFound ? 'notice-card--found' : ''} ${compact ? 'notice-card--compact' : ''}`}>
       {thumbnail && (
         <div className="notice-thumb">
-          <img src={`${API_BASE}${thumbnail}`} alt="" />
+          <img src={`${API_BASE}${thumbnail}`} alt="" className={photosRedacted ? 'notice-thumb-img--redacted' : ''} />
+          {photosRedacted && (
+            <span className="notice-thumb-redacted-badge" title="Photo is pixelated until a claim is verified, since this is a high-risk item">
+              🔒 Hidden until claimed
+            </span>
+          )}
         </div>
       )}
       <div className="notice-tag-row">

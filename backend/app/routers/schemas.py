@@ -50,6 +50,11 @@ class ReportOut(BaseModel):
     # to see in order to know what they're being asked to prove. Only ever
     # set on FOUND reports; null on LOST reports.
     hidden_question: Optional[str] = None
+    # True while photo_paths point at pixelated copies (high-risk + still
+    # unclaimed) -- see matching/redaction.py. Lets the frontend show a
+    # "photo hidden until claim is verified" notice instead of just
+    # silently rendering a blurry image with no explanation.
+    photos_redacted: bool = False
 
     @field_validator("is_high_risk", mode="before")
     @classmethod
@@ -72,6 +77,10 @@ class MatchOut(BaseModel):
     match_probability: Optional[float]
     used_signals: Optional[List[str]]
     status: str
+    # Set only when this match is part of a close-scoring cluster (see
+    # matches.py's competing_cluster()) -- the frontend shows this as a
+    # forced-choice question instead of just a bare score. Null otherwise.
+    disambiguation_question: Optional[str] = None
 
     class Config:
         from_attributes = True

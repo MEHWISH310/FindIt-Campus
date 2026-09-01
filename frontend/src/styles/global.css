@@ -757,6 +757,23 @@ button {
   height: 96px;
 }
 
+.notice-thumb {
+  position: relative;
+}
+
+.notice-thumb-redacted-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
 .notice-tag {
   display: inline-block;
   font-family: var(--font-mono);

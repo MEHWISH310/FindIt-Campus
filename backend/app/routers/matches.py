@@ -12,6 +12,7 @@ null, so the UI falls back to showing raw_score/ranking.
 """
 
 import math
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -20,6 +21,7 @@ import joblib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.report import Report, ReportType, ReportStatus
 from app.models.match import Match, MatchStatus
@@ -28,6 +30,7 @@ from app.routers.schemas import MatchOut, ClaimRequest, ClaimResponse
 from app.matching.embeddings import cosine_sim
 from app.matching.fusion import ReportSignals, composite_score, competing_cluster
 from app.matching.calibration import MatchCalibrator
+from app.matching.redaction import reveal_photos
 from app.realtime import sio
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -226,6 +229,14 @@ async def verify_claim(match_id: str, payload: ClaimRequest, db: Session = Depen
     match.status = MatchStatus.CONFIRMED
     found_report.status = ReportStatus.RESOLVED
     lost_report.status = ReportStatus.RESOLVED
+
+    # Claim's verified, so the redaction has done its job -- swap the
+    # clear originals back over the public photo paths (no-op if this
+    # report was never high-risk / never had photos; see redaction.py).
+    if found_report.is_high_risk == "true" and found_report.photo_paths:
+        report_dir = os.path.join(settings.upload_dir, str(found_report.id))
+        filenames = [os.path.basename(p) for p in found_report.photo_paths]
+        reveal_photos(report_dir, filenames)
 
     record = CustodyRecord(
         match_id=match.id,

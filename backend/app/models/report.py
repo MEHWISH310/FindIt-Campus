@@ -115,3 +115,11 @@ class Report(Base):
             and self.status == ReportStatus.OPEN
             and self.days_open >= STALE_DAYS_THRESHOLD
         )
+
+    @property
+    def photos_redacted(self) -> bool:
+        """True while this report's public photo_paths point at pixelated
+        copies rather than the originals -- i.e. high-risk and not yet
+        resolved. See matching/redaction.py; reveal_photos() swaps the
+        originals back in once a claim is verified (matches.py)."""
+        return self.is_high_risk == "true" and self.status != ReportStatus.RESOLVED

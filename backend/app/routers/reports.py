@@ -31,6 +31,7 @@ from app.models.report import (
 )
 from app.routers.schemas import ReportCreate, ReportOut
 from app.matching.embeddings import encode_text, encode_images
+from app.matching.redaction import redact_photo, originals_dir
 from app.realtime import sio
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -219,17 +220,31 @@ def upload_photos(
         with open(disk_path, "wb") as out:
             out.write(contents)
 
+        # Redact high-risk items immediately -- the public /uploads path
+        # gets pixelated, the clear original is tucked away in originals/
+        # for matching and for reveal-on-claim (see matches.py's
+        # verify_claim and matching/redaction.py's docstring for why).
+        if report.is_high_risk == "true":
+            redact_photo(report_dir, filename)
+
         # Web-accessible path -- main.py mounts settings.upload_dir at /uploads
         saved_paths.append(f"/uploads/{report.id}/{filename}")
 
     report.photo_paths = (report.photo_paths or []) + saved_paths
 
     # Recompute the image embedding across ALL of this report's photos
-    # (old + new) using local disk paths, not the web-facing ones.
-    all_disk_paths = [
-        os.path.join(settings.upload_dir, str(report.id), os.path.basename(p))
-        for p in report.photo_paths
-    ]
+    # (old + new). Always reads from the clear original when one exists
+    # (high-risk reports), never the pixelated public copy -- otherwise
+    # redaction would quietly wreck match quality for exactly the items
+    # that most need to be found (IDs, phones, documents).
+    all_disk_paths = []
+    for p in report.photo_paths:
+        filename = os.path.basename(p)
+        original_path = os.path.join(originals_dir(report_dir), filename)
+        if report.is_high_risk == "true" and os.path.exists(original_path):
+            all_disk_paths.append(original_path)
+        else:
+            all_disk_paths.append(os.path.join(report_dir, filename))
     report.image_embedding = encode_images(all_disk_paths)
 
     db.add(report)
