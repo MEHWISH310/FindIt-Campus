@@ -159,6 +159,11 @@ export function listCustodyRecords() {
   return request('/custody/');
 }
 
+/** GET /custody/mine — handovers where the logged-in user is the claimant. */
+export function listMyCustodyRecords() {
+  return request('/custody/mine');
+}
+
 /**
  * POST /matches/{match_id}/disambiguate — forced-choice resolution when
  * multiple candidates were too close to auto-rank (status

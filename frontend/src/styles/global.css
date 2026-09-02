@@ -693,6 +693,125 @@ button {
   color: var(--lost);
 }
 
+/* --- Profile / "My account" page — pages/Profile.jsx ---------------- */
+
+.profile {
+  padding: 48px 24px 100px;
+}
+
+.profile .dashboard-head {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 24px;
+}
+
+.profile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-name {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.profile-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.profile-edit-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.profile-email {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.profile-section {
+  margin-top: 44px;
+}
+
+/* Right-aligned button row inside the name / password modals. */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.modal-actions .submit-btn {
+  align-self: auto;
+  margin-top: 0;
+}
+
+/* Cancel keeps its ghost colours but matches the pill shape + height of
+   the primary button beside it. */
+.modal-actions .claim-form-cancel {
+  border-radius: 999px;
+  height: auto;
+  padding: 0 22px;
+}
+
+.profile-section-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.profile-section-title--lost {
+  color: var(--lost);
+}
+
+.profile-section-title--found {
+  color: var(--found);
+}
+
+.profile-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 8px 0;
+  margin: 0;
+}
+
+.profile-empty--error {
+  color: var(--lost);
+}
+
+/* Vertical rhythm for a form with no card chrome -- used by
+   <ChangePasswordForm bare /> inside the "Reset password" modal. */
+.stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-note {
+  margin: -6px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -707,6 +826,14 @@ button {
 @media (max-width: 480px) {
   .page-shell {
     padding: 0 16px;
+  }
+
+  .profile {
+    padding: 32px 16px 72px;
+  }
+
+  .profile .dashboard-head {
+    flex-direction: column;
   }
 
   .dashboard-grid {
@@ -1170,7 +1297,7 @@ button {
 
 .submit-btn:disabled {
   opacity: 0.5;
-  cursor: wait;
+  cursor: not-allowed;
 }
 
 @media (max-width: 640px) {
