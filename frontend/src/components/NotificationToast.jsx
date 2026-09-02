@@ -7,7 +7,7 @@ import { REPORTS_CHANGED_EVENT } from '../api/client';
 const EVENT_RENDERERS = [
   {
     name: 'report:created',
-    render: (d) => `New ${d.report_type} report: "${d.title}"${d.is_high_risk ? ' ⚠️ high-risk' : ''}`,
+    render: (d) => `New ${d.report_type} report: "${d.title}"${d.is_high_risk ? ' (high-risk)' : ''}`,
   },
   {
     name: 'match:found',
@@ -20,7 +20,7 @@ const EVENT_RENDERERS = [
   },
   {
     name: 'item:claimed',
-    render: (d) => `✅ "${d.item_name}" claimed by ${d.claimant_name}`,
+    render: (d) => `"${d.item_name}" claimed by ${d.claimant_name}`,
   },
 ];
 

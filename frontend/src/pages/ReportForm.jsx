@@ -152,7 +152,7 @@ export default function ReportForm() {
   }
 
   return (
-    <div className="report-page">
+    <div className="report-page report-page--wide">
       <Link to="/" className="back-link">
         ← Back
       </Link>

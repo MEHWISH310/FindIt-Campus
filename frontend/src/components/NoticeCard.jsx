@@ -58,7 +58,7 @@ export default function NoticeCard({
           <img src={`${API_BASE}${thumbnail}`} alt="" className={photosRedacted ? 'notice-thumb-img--redacted' : ''} />
           {photosRedacted && (
             <span className="notice-thumb-redacted-badge" title="Photo is pixelated until a claim is verified, since this is a high-risk item">
-              🔒 Hidden until claimed
+              Hidden until claimed
             </span>
           )}
         </div>
@@ -69,7 +69,7 @@ export default function NoticeCard({
         </span>
         {report.is_high_risk && (
           <span className="notice-tag notice-tag--risk" title="ID, phone, or academic documents get priority handling">
-            ⚠ High-risk
+            High-risk
           </span>
         )}
         {isEscalated && (
@@ -79,7 +79,7 @@ export default function NoticeCard({
         )}
         {isResolved && (
           <span className="notice-tag notice-tag--resolved" title="Claimed and returned to its owner">
-            ✅ Resolved
+            Resolved
           </span>
         )}
       </div>

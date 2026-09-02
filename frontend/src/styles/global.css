@@ -826,11 +826,30 @@ button {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 16px;
+  /* Every row takes the height of the tallest card, so all cards in the
+     grid end up the same size regardless of how much content each has. */
+  grid-auto-rows: 1fr;
+}
+
+/* The per-card index wrapper needs to stretch to the row height so the
+   card inside can fill it. */
+.dashboard-grid > * {
+  display: flex;
 }
 
 .dashboard-grid .notice-card {
   animation: card-in 0.35s var(--ease) backwards;
   animation-delay: calc(var(--card-index, 0) * 40ms);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Pin the footer (timestamp / actions) to the bottom of the card so the
+   extra height on shorter cards becomes empty space below the content
+   rather than a gap that leaves the footer floating mid-card. */
+.dashboard-grid .notice-card .notice-footer {
+  margin-top: auto;
 }
 
 @media (max-width: 480px) {
@@ -1050,6 +1069,16 @@ button {
   max-width: 620px;
   margin: 0 auto;
   padding: 48px 24px 100px;
+}
+
+/* The report-lost / report-found form has a lot of fields (and 2-col
+   rows), so it gets a roomier width than the narrow auth cards. */
+.report-page--wide {
+  max-width: 900px;
+}
+
+.report-page--wide .report-card {
+  padding: 40px;
 }
 
 /* Auth screens (login / signup / reset) render without the site header,
@@ -1339,7 +1368,8 @@ button {
     padding: 28px 16px 64px;
   }
 
-  .report-card {
+  .report-card,
+  .report-page--wide .report-card {
     padding: 22px;
     gap: 16px;
   }
