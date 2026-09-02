@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Header from './components/Header';
+import ChatWidget from './components/ChatWidget';
 import NotificationToast from './components/NotificationToast';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
@@ -21,6 +22,7 @@ export default function App() {
       <BrowserRouter>
         <Header />
         <NotificationToast />
+        <ChatWidget /> 
         <Routes>
           {/* Public: only the auth pages themselves. Everything else --
               including the landing page -- requires login, so someone

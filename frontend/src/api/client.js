@@ -233,3 +233,11 @@ export function updateMe(payload) {
 export function getMatch(matchId) {
   return request(`/matches/${matchId}`);
 }
+/** POST /chatbot/message — send a chat message, get the assistant's reply
+ * plus updated conversation history to pass into the next call. */
+export function sendChatMessage(message, history = []) {
+  return request('/chatbot/message', {
+    method: 'POST',
+    body: JSON.stringify({ message, history }),
+  });
+}

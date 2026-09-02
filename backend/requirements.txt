@@ -16,3 +16,4 @@ tf-keras
 python-socketio==5.11.4
 qrcode[pil]==7.4.2
 PyJWT==2.9.0
+google-genai

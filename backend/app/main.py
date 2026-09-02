@@ -18,6 +18,7 @@ from app.db.session import Base, engine
 from app.models import Report, Match, CustodyRecord, User  # noqa: F401 -- must import so tables register
 from app.routers import reports_router, matches_router, custody_router, auth_router
 from app.realtime import sio
+from app.routers import reports_router, matches_router, custody_router, auth_router, chatbot_router
 
 # Named fastapi_app (not `app`) because the ASGI entrypoint uvicorn actually
 # serves needs to be the combined Socket.IO + FastAPI app below -- see the
@@ -42,6 +43,7 @@ fastapi_app.include_router(reports_router)
 fastapi_app.include_router(matches_router)
 fastapi_app.include_router(custody_router)
 fastapi_app.include_router(auth_router)
+fastapi_app.include_router(chatbot_router)   # add is line ko baaki includes ke saath
 
 
 @fastapi_app.on_event("startup")

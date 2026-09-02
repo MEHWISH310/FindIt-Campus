@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = ""
-
+    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
     class Config:
         env_file = ".env"
 
