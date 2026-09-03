@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { getReport, getMatch, findMatches, claimMatch, disambiguateMatch, ApiError } from '../api/client';
 import NoticeCard from '../components/NoticeCard';
 import Modal from '../components/Modal';
+import { useAuth } from '../context/AuthContext';
 
 function isNeedsReview(match) {
   return match.status === 'NEEDS_DISAMBIGUATION' || match.status === 'needs_disambiguation';
@@ -196,7 +197,7 @@ function DisambiguationPrompt({ matches, sourceId, onResolved }) {
   );
 }
 
-function ThreadRow({ match, sourceId, index, onClaimed }) {
+function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
   const [counterpart, setCounterpart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [claimOpen, setClaimOpen] = useState(false);
@@ -246,8 +247,18 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
   }, [isConfirmed, match.id]);
 
   // Claiming only makes sense against a FOUND report that's still open --
-  // that's the side holding the hidden_question a claimant must answer.
-  const claimable = counterpart?.report_type === 'found' && counterpart?.status === 'open' && !isConfirmed && !verifiedPendingPickup;
+  // that's the side holding the hidden_question a claimant must answer --
+  // AND only for the person who actually filed the LOST report this
+  // matches page is for. The backend enforces this too (verify_claim
+  // 403s anyone else), but there's no reason to dangle a "Claim this
+  // item" button in front of someone who's just browsing another
+  // student's matches and let them hit that error.
+  const claimable =
+    counterpart?.report_type === 'found' &&
+    counterpart?.status === 'open' &&
+    !isConfirmed &&
+    !verifiedPendingPickup &&
+    isSourceOwner;
 
   return (
     <div
@@ -314,9 +325,14 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
 
 export default function Matches() {
   const { reportId } = useParams();
+  const { user } = useAuth();
   const [sourceReport, setSourceReport] = useState(null);
   const [matches, setMatches] = useState(null);
   const [error, setError] = useState(null);
+
+  // Only the person who filed this lost report should see a "Claim this
+  // item" button on its matches page -- everyone else is just browsing.
+  const isSourceOwner = !!(user && sourceReport && sourceReport.reporter_id === user.id);
 
   // Deliberately only re-fetches sourceReport, NOT findMatches again --
   // findMatches() re-runs the whole matching pipeline and writes fresh
@@ -406,7 +422,14 @@ export default function Matches() {
             {normalMatches.length > 0 && (
               <div className="thread-list">
                 {normalMatches.map((m, i) => (
-                  <ThreadRow key={m.id} match={m} sourceId={reportId} index={i} onClaimed={refreshSourceReport} />
+                  <ThreadRow
+                    key={m.id}
+                    match={m}
+                    sourceId={reportId}
+                    index={i}
+                    onClaimed={refreshSourceReport}
+                    isSourceOwner={isSourceOwner}
+                  />
                 ))}
               </div>
             )}

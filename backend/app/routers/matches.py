@@ -40,7 +40,7 @@ from app.matching.fusion import ReportSignals, composite_score, competing_cluste
 from app.matching.calibration import MatchCalibrator
 from app.realtime import sio
 from app.core.email import send_email
-from app.routers.auth import get_current_user_optional
+from app.routers.auth import get_current_user_optional, get_current_user
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -277,12 +277,22 @@ async def verify_claim(
     match_id: str,
     payload: ClaimRequest,
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
 ):
     """
     Asymmetric verification (per your abstract): whoever is claiming the
     item must answer the FOUND report's hidden_question correctly -- we
     never show them hidden_answer, we just check equality server-side.
+
+    Only the person who actually filed the LOST report behind this match
+    is allowed to attempt the claim -- otherwise anyone who stumbled onto
+    (or guessed) a match_id could try to answer the finder's verification
+    question for someone else's item. So this now requires login
+    (get_current_user, not get_current_user_optional) and checks
+    lost_report.reporter_id == user.id before even looking at the
+    submitted answer. A lost report filed before auth was wired up (no
+    reporter_id) has no verifiable owner, so it's rejected too --
+    nobody can claim on its behalf.
 
     On a correct answer:
       - match.status -> VERIFIED (NOT yet CONFIRMED -- the item is still
@@ -314,6 +324,12 @@ async def verify_claim(
     lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
     if not found_report or not lost_report:
         raise HTTPException(404, "One of the reports behind this match no longer exists")
+
+    if lost_report.reporter_id != user.id:
+        raise HTTPException(
+            403,
+            "Only the person who filed the lost report can claim this match.",
+        )
 
     if not found_report.hidden_answer:
         raise HTTPException(400, "This found report has no verification question set up")
