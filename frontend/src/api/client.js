@@ -159,6 +159,11 @@ export function listCustodyRecords() {
   return request('/custody/');
 }
 
+/** GET /custody/mine — handovers where the logged-in user is the claimant. */
+export function listMyCustodyRecords() {
+  return request('/custody/mine');
+}
+
 /**
  * POST /matches/{match_id}/disambiguate — forced-choice resolution when
  * multiple candidates were too close to auto-rank (status
@@ -213,6 +218,18 @@ export function changePassword(oldPassword, newPassword) {
     method: 'POST',
     body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
   });
+}
+
+export async function deleteReport(reportId, token) {
+  const res = await fetch(`${API_BASE}/reports/${reportId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.detail || 'Could not delete report.');
+  }
+  return res.json();
 }
 
 /** GET /auth/me */

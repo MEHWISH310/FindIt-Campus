@@ -32,6 +32,7 @@ class ReportCreate(BaseModel):
 
 class ReportOut(BaseModel):
     id: UUID
+    reporter_id: Optional[UUID] = None
     report_type: str
     status: str
     title: str

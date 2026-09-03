@@ -10,6 +10,7 @@ import ReportForm from './pages/ReportForm';
 import Matches from './pages/Matches';
 import ClaimedItems from './pages/ClaimedItems';
 import Login from './pages/Login';
+import Profile from './pages/Profile';
 import RequestAccess from './pages/RequestAccess';
 import ForgotPassword from './pages/ForgotPassword';
 import SetPassword from './pages/SetPassword';
@@ -60,6 +61,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ClaimedItems />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/me"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />

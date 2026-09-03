@@ -1,4 +1,4 @@
-import { API_BASE } from '../api/client';
+import { API_BASE, deleteReport } from '../api/client';
 
 function timeAgo(dateString) {
   if (!dateString) return '';
@@ -13,19 +13,43 @@ function timeAgo(dateString) {
 
 /**
  * report: { id, report_type, title, description, category, color, brand,
- *           location_name, item_datetime, status, created_at }
+ *           location_name, item_datetime, status, created_at, reporter_id }
  * compact: hides the description (used in the Matches connector rows)
  * onFindMatches: optional — shows a "Find matches" link that fires this
  * primaryAction: optional { label, onClick } — shows a solid button in the
  *   footer (used for "Claim this item" so it reads as the card's main
  *   call to action, not a stray link floating outside the card)
+ * currentUserId: id of the logged-in user, if any — used to decide
+ *   whether to show the Delete link (only the reporter sees it)
+ * token: logged-in user's JWT, needed to authorize the delete call
+ * onDeleted: called with report.id after a successful delete, so the
+ *   parent list can remove the card from state
  */
-export default function NoticeCard({ report, compact = false, onFindMatches, primaryAction }) {
+export default function NoticeCard({
+  report,
+  compact = false,
+  onFindMatches,
+  primaryAction,
+  currentUserId,
+  token,
+  onDeleted,
+}) {
   const isFound = report.report_type === 'found';
   const thumbnail = report.photo_paths?.[0];
   const isEscalated = report.status === 'escalated';
   const isResolved = report.status === 'resolved';
   const photosRedacted = report.photos_redacted && thumbnail;
+  const isOwner = Boolean(currentUserId) && report.reporter_id === currentUserId;
+
+  async function handleDelete() {
+    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+    try {
+      await deleteReport(report.id, token);
+      onDeleted?.(report.id);
+    } catch (err) {
+      alert(err.message || 'Could not delete report.');
+    }
+  }
 
   return (
     <div className={`notice-card ${isFound ? 'notice-card--found' : ''} ${compact ? 'notice-card--compact' : ''}`}>
@@ -34,7 +58,7 @@ export default function NoticeCard({ report, compact = false, onFindMatches, pri
           <img src={`${API_BASE}${thumbnail}`} alt="" className={photosRedacted ? 'notice-thumb-img--redacted' : ''} />
           {photosRedacted && (
             <span className="notice-thumb-redacted-badge" title="Photo is pixelated until a claim is verified, since this is a high-risk item">
-              🔒 Hidden until claimed
+              Hidden until claimed
             </span>
           )}
         </div>
@@ -45,7 +69,7 @@ export default function NoticeCard({ report, compact = false, onFindMatches, pri
         </span>
         {report.is_high_risk && (
           <span className="notice-tag notice-tag--risk" title="ID, phone, or academic documents get priority handling">
-            ⚠ High-risk
+            High-risk
           </span>
         )}
         {isEscalated && (
@@ -55,7 +79,7 @@ export default function NoticeCard({ report, compact = false, onFindMatches, pri
         )}
         {isResolved && (
           <span className="notice-tag notice-tag--resolved" title="Claimed and returned to its owner">
-            ✅ Resolved
+            Resolved
           </span>
         )}
       </div>
@@ -85,6 +109,11 @@ export default function NoticeCard({ report, compact = false, onFindMatches, pri
         {onFindMatches && report.status === 'open' && (
           <button type="button" className="notice-footer-link" onClick={onFindMatches}>
             Find matches →
+          </button>
+        )}
+        {isOwner && (
+          <button type="button" className="notice-footer-link notice-footer-link--danger" onClick={handleDelete}>
+            Delete
           </button>
         )}
       </div>

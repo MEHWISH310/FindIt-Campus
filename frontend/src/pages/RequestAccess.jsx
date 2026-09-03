@@ -31,18 +31,17 @@ export default function RequestAccess() {
   }
 
   return (
-    <div className="report-page">
+    <div className="report-page auth-page">
       <div className="report-card">
         <h1 className="report-heading">Sign up</h1>
         <p className="verification-note">
-          For students already added to FindIt Campus by an admin but who haven't logged in
-          yet. Enter your @vitstudent.ac.in email and registration number -- we'll send you a
+          Already added by an admin? Enter your email and registration number to get a
           temporary password.
         </p>
 
         {sent ? (
           <p className="claim-form-success-note">
-            ✅ If that email/registration number is on file, a temporary password has been sent.
+            If that email/registration number is on file, a temporary password has been sent.
             Check your inbox, then <Link to="/login">log in</Link>.
           </p>
         ) : (
@@ -54,7 +53,7 @@ export default function RequestAccess() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you.2023@vitstudent.ac.in"
+                placeholder="mail.20XX@vitstudent.ac.in"
               />
             </label>
 
@@ -78,7 +77,10 @@ export default function RequestAccess() {
         )}
 
         <p className="verification-note">
-          Already set a password before? <Link to="/login">Log in</Link>
+          Already set a password before?{' '}
+          <Link to="/login" className="auth-link-accent">
+            Log in
+          </Link>
         </p>
       </div>
     </div>
