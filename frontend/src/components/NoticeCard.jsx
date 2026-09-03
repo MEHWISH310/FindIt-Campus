@@ -15,11 +15,11 @@ function timeAgo(dateString) {
  * report: { id, report_type, title, description, category, color, brand,
  *           location_name, item_datetime, status, created_at, reporter_id }
  * compact: hides the description (used in the Matches connector rows)
- * onFindMatches: optional — shows a "Find matches" link that fires this
- * primaryAction: optional { label, onClick } — shows a solid button in the
+ * onFindMatches: optional. Shows a "Find matches" link that fires this
+ * primaryAction: optional { label, onClick }. Shows a solid button in the
  *   footer (used for "Claim this item" so it reads as the card's main
  *   call to action, not a stray link floating outside the card)
- * currentUserId: id of the logged-in user, if any — used to decide
+ * currentUserId: id of the logged-in user, if any. Used to decide
  *   whether to show the Delete link (only the reporter sees it)
  * token: logged-in user's JWT, needed to authorize the delete call
  * onDeleted: called with report.id after a successful delete, so the
@@ -87,7 +87,7 @@ export default function NoticeCard({
       {!compact && <p className="notice-desc">{report.description}</p>}
       {report.is_stale && !compact && (
         <p className="notice-stale-note">
-          Still searching — reported {report.days_open} days ago
+          Still searching. Reported {report.days_open} days ago.
         </p>
       )}
       <dl className="notice-meta">

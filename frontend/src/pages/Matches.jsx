@@ -185,7 +185,7 @@ function DisambiguationPrompt({ matches, sourceId, onResolved }) {
   return (
     <div className="disambig-prompt">
       <p className="disambig-heading">
-        A few candidates scored too close to auto-rank — which one is actually yours?
+        A few candidates scored too close to auto-rank. Which one is actually yours?
       </p>
       <div className="disambig-grid">
         {matches.map((m) => (
@@ -273,7 +273,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
             )}
             {isConfirmed && gatedInfo?.found_contact && (
               <div className="claim-form-success-note">
-                <strong>Finder's contact:</strong> {gatedInfo.found_contact.name || 'N/A'} —{' '}
+                <strong>Finder's contact:</strong> {gatedInfo.found_contact.name || 'N/A'} ·{' '}
                 {gatedInfo.found_contact.email}
                 {gatedInfo.found_contact.phone ? ` · ${gatedInfo.found_contact.phone}` : ''}
               </div>
@@ -281,7 +281,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
             {isConfirmed && gatedInfo?.claimant_info && (
               <div className="claim-form-success-note">
                 <strong>Claimed by:</strong> {gatedInfo.claimant_info.claimant_name}
-                {gatedInfo.claimant_info.claimant_contact ? ` — ${gatedInfo.claimant_info.claimant_contact}` : ''}
+                {gatedInfo.claimant_info.claimant_contact ? ` · ${gatedInfo.claimant_info.claimant_contact}` : ''}
               </div>
             )}
           </>
@@ -300,9 +300,9 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
       <div className="thread-connector">
         <span
           className={`score-pill ${needsReview ? 'score-pill--warn' : ''} ${!hasProbability && pct != null ? 'score-pill--estimated' : ''} mono`}
-          title={!hasProbability && pct != null ? 'Estimated from raw score — not yet calibrated against confirmed matches' : undefined}
+          title={!hasProbability && pct != null ? 'Estimated from raw score, not yet calibrated against confirmed matches' : undefined}
         >
-          {needsReview ? 'Needs review' : pct != null ? `${pct}%` : '—'}
+          {needsReview ? 'Needs review' : pct != null ? `${pct}%` : '-'}
         </span>
         {match.used_signals?.length > 0 && (
           <span className="signals">{match.used_signals.join(', ')}</span>
@@ -387,7 +387,7 @@ export default function Matches() {
 
       {matches && matches.length === 0 && (
         <p className="matches-status">
-          No candidate matches yet — check back once more reports come in.
+          No candidate matches yet. Check back once more reports come in.
         </p>
       )}
 

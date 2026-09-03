@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { listCustodyRecords } from '../api/client';
 
 function formatDate(dateString) {
-  if (!dateString) return '—';
+  if (!dateString) return '-';
   return new Date(dateString).toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -37,7 +37,7 @@ export default function ClaimedItems() {
       </div>
 
       <p className="dashboard-status" style={{ marginTop: 0 }}>
-        Every confirmed handover, most recent first — this is the audit trail written
+        Every confirmed handover, most recent first. This is the audit trail written
         when a claimant answers a found report's verification question correctly.
       </p>
 
@@ -65,10 +65,10 @@ export default function ClaimedItems() {
                 <tr key={r.id}>
                   <td>{r.item_name}</td>
                   <td>{r.claimant_name}</td>
-                  <td>{r.claimant_contact || '—'}</td>
+                  <td>{r.claimant_contact || '-'}</td>
                   <td>{r.verifier_name}</td>
                   <td className="mono">{formatDate(r.handover_datetime)}</td>
-                  <td>{r.notes || '—'}</td>
+                  <td>{r.notes || '-'}</td>
                 </tr>
               ))}
             </tbody>

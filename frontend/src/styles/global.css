@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
 
 /* ==========================================================================
-   FindIt Campus — global stylesheet
-   Direction: a calm "control room" for a matching engine — flat, muted
+   FindIt Campus global stylesheet
+   Direction: a calm "control room" for a matching engine. Flat, muted
    cards (status carried by the tag chip, not a loud side stripe), a clean
    connector line (not an illustration) tying a match's two cards together
    on the results page. Ships as a dark theme by default with a fully-tuned
@@ -24,7 +24,7 @@
    -------------------------------------------------------------------------- */
 
 :root {
-  /* Brand palette — fixed hex values, do not re-tune */
+  /* Brand palette: fixed hex values, do not re-tune */
   --brand-forest: #024336;
   --brand-cranberry: #b3306b;
   --brand-pink: #fd97d2;
@@ -204,7 +204,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   2. Header / nav — components/Header.jsx, components/ThemeToggle.jsx
+   2. Header / nav: components/Header.jsx, components/ThemeToggle.jsx
    -------------------------------------------------------------------------- */
 
 .site-header {
@@ -1270,7 +1270,7 @@ button {
   color: var(--lost);
 }
 
-/* --- Profile / "My account" page — pages/Profile.jsx ---------------- */
+/* --- Profile / "My account" page: pages/Profile.jsx ---------------- */
 
 .profile {
   padding: 48px 24px 100px;
@@ -1459,7 +1459,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   5. NoticeCard — components/NoticeCard.jsx
+   5. NoticeCard: components/NoticeCard.jsx
    -------------------------------------------------------------------------- */
 
 .notice-card {
@@ -1543,6 +1543,12 @@ button {
 
 .notice-tag-row .notice-tag {
   margin-bottom: 10px;
+}
+
+/* Resolved is a state, not a category tag, so float it to the far end
+   of the row instead of sitting beside the Lost / Found chip. */
+.notice-tag-row .notice-tag--resolved {
+  margin-left: auto;
 }
 
 .notice-tag--risk {
@@ -1650,7 +1656,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   6. ReportForm page — pages/ReportForm.jsx
+   6. ReportForm page: pages/ReportForm.jsx
    -------------------------------------------------------------------------- */
 
 .report-page {
@@ -1985,7 +1991,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   7. Matches page — pages/Matches.jsx
+   7. Matches page: pages/Matches.jsx
    -------------------------------------------------------------------------- */
 
 .matches-page {

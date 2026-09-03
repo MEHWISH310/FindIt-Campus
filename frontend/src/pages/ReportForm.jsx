@@ -69,7 +69,7 @@ export default function ReportForm() {
 
     const tooBig = picked.find((f) => f.size > MAX_FILE_SIZE);
     if (tooBig) {
-      setError(`${tooBig.name} is over 8MB — pick a smaller photo.`);
+      setError(`${tooBig.name} is over 8MB. Pick a smaller photo.`);
       return;
     }
 
@@ -98,7 +98,7 @@ export default function ReportForm() {
         setLocating(false);
       },
       () => {
-        setError('Could not read your location — enter it manually below.');
+        setError('Could not read your location. Enter it manually below.');
         setLocating(false);
       }
     );
@@ -198,8 +198,8 @@ export default function ReportForm() {
         <div className="field photo-field">
           <span>Photos (optional, up to {MAX_PHOTOS})</span>
           <p className="photo-hint">
-            A clear photo makes matching much more reliable — the system compares
-            photos across reports, not just descriptions.
+            A clear photo makes matching much more reliable, because the system
+            compares photos across reports, not just descriptions.
           </p>
 
           {previews.length > 0 && (
@@ -311,7 +311,7 @@ export default function ReportForm() {
         {isFound && (
           <div className="verification-block">
             <p className="verification-note">
-              Ask something only the real owner would know — this is used to confirm a claim before handoff.
+              Ask something only the real owner would know. This is used to confirm a claim before handoff.
             </p>
             <label className="field">
               <span>Verification question *</span>
@@ -347,7 +347,7 @@ export default function ReportForm() {
         {error && <p className="form-error">{error}</p>}
         {uploadStatus === 'failed' && (
           <p className="form-warning">
-            Report saved, but photo upload failed — you can still find matches on the
+            Report saved, but photo upload failed. You can still find matches on the
             description alone.
           </p>
         )}

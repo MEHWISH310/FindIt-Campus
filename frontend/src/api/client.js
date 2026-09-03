@@ -65,7 +65,7 @@ async function request(path, options = {}) {
   return body;
 }
 
-/** POST /reports/  — create a lost or found report. */
+/** POST /reports/ : create a lost or found report. */
 export async function createReport(payload) {
   const report = await request('/reports/', {
     method: 'POST',
@@ -75,7 +75,7 @@ export async function createReport(payload) {
   return report;
 }
 
-/** GET /reports/  — optionally filtered by report_type ('lost' | 'found'). */
+/** GET /reports/ : optionally filtered by report_type ('lost' | 'found'). */
 export function listReports(reportType) {
   const qs = reportType ? `?report_type=${encodeURIComponent(reportType)}` : '';
   return request(`/reports/${qs}`);
@@ -86,13 +86,13 @@ export function getReport(reportId) {
   return request(`/reports/${reportId}`);
 }
 
-/** POST /matches/find/{report_id} — run the AI matching pipeline for a report. */
+/** POST /matches/find/{report_id} : run the AI matching pipeline for a report. */
 export function findMatches(reportId) {
   return request(`/matches/find/${reportId}`, { method: 'POST' });
 }
 
 /**
- * POST /reports/{report_id}/photos — attach photos to an existing report.
+ * POST /reports/{report_id}/photos : attach photos to an existing report.
  * `files` is a FileList or array of File objects (max 5, from ReportForm's
  * file input). Doesn't go through request() because we must NOT set a
  * Content-Type header here -- the browser sets its own multipart boundary
@@ -126,7 +126,7 @@ export async function uploadPhotos(reportId, files) {
 }
 
 /**
- * POST /reports/escalate-stale — sweep FOUND high-risk reports unclaimed
+ * POST /reports/escalate-stale : sweep FOUND high-risk reports unclaimed
  * for 7+ days and mark them ESCALATED. No scheduler is wired up yet, so
  * this is triggered manually via the "Run escalation check" button on
  * the Found dashboard rather than running automatically in the background.
@@ -136,7 +136,7 @@ export function escalateStale() {
 }
 
 /**
- * POST /matches/{match_id}/verify — submit a claim attempt (claimant_name,
+ * POST /matches/{match_id}/verify : submit a claim attempt (claimant_name,
  * claimant_contact, hidden_answer, notes). Returns { verified, message,
  * match, custody_record }. A wrong answer comes back as verified: false,
  * not a thrown error, so the form can show it inline and let them retry.
@@ -154,18 +154,18 @@ export async function claimMatch(matchId, payload) {
   return result;
 }
 
-/** GET /custody/ — the full handover log, for the "Claimed items" page. */
+/** GET /custody/ : the full handover log, for the "Claimed items" page. */
 export function listCustodyRecords() {
   return request('/custody/');
 }
 
-/** GET /custody/mine — handovers where the logged-in user is the claimant. */
+/** GET /custody/mine : handovers where the logged-in user is the claimant. */
 export function listMyCustodyRecords() {
   return request('/custody/mine');
 }
 
 /**
- * POST /matches/{match_id}/disambiguate — forced-choice resolution when
+ * POST /matches/{match_id}/disambiguate : forced-choice resolution when
  * multiple candidates were too close to auto-rank (status
  * NEEDS_DISAMBIGUATION). `matchId` is the one the user picked as theirs;
  * the backend promotes it back to a normal CANDIDATE and rejects the rest
@@ -179,7 +179,7 @@ export { ApiError };
 
 // --- Auth ---------------------------------------------------------------
 
-/** POST /auth/request-access — first-time signup: claims/verifies the
+/** POST /auth/request-access : first-time signup, claims/verifies the
  * registration number against a pre-added account row. */
 export function requestAccess(email, registrationNumber) {
   return request('/auth/request-access', {
@@ -188,7 +188,7 @@ export function requestAccess(email, registrationNumber) {
   });
 }
 
-/** POST /auth/forgot-password — already has an account, forgot the password. */
+/** POST /auth/forgot-password : already has an account, forgot the password. */
 export function forgotPassword(email) {
   return request('/auth/forgot-password', {
     method: 'POST',
@@ -196,7 +196,7 @@ export function forgotPassword(email) {
   });
 }
 
-/** POST /auth/login — returns { access_token, must_set_password, user }. */
+/** POST /auth/login : returns { access_token, must_set_password, user }. */
 export function login(email, password) {
   return request('/auth/login', {
     method: 'POST',
@@ -204,7 +204,7 @@ export function login(email, password) {
   });
 }
 
-/** POST /auth/set-password — forced first-login / post-reset password set. */
+/** POST /auth/set-password : forced first-login / post-reset password set. */
 export function setPassword(newPassword) {
   return request('/auth/set-password', {
     method: 'POST',
@@ -212,7 +212,7 @@ export function setPassword(newPassword) {
   });
 }
 
-/** POST /auth/change-password — voluntary change, requires the old password. */
+/** POST /auth/change-password : voluntary change, requires the old password. */
 export function changePassword(oldPassword, newPassword) {
   return request('/auth/change-password', {
     method: 'POST',
@@ -237,7 +237,7 @@ export function getMe() {
   return request('/auth/me');
 }
 
-/** PATCH /auth/me — update name/phone/registration_number. */
+/** PATCH /auth/me : update name/phone/registration_number. */
 export function updateMe(payload) {
   return request('/auth/me', {
     method: 'PATCH',
@@ -245,7 +245,7 @@ export function updateMe(payload) {
   });
 }
 
-/** GET /matches/{match_id} — single match, with found_contact/claimant_info
+/** GET /matches/{match_id} : single match, with found_contact/claimant_info
  * filled in when the logged-in user is authorized to see them. */
 export function getMatch(matchId) {
   return request(`/matches/${matchId}`);
