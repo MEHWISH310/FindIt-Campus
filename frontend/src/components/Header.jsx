@@ -76,7 +76,7 @@ export default function Header() {
           </NavLink>
           {user.is_admin && (
             <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
-              Admin
+              Pickups
             </NavLink>
           )}
         </nav>

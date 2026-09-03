@@ -10,6 +10,33 @@ function formatDate(dateString) {
 }
 
 /**
+ * Renders a person's name + email + phone. Most seeded/legacy users have
+ * no `name` set, so falling back to `person.name || person.email` for the
+ * first line while ALSO printing `person.email` on the line below showed
+ * the email twice. Only show the name line when a real name exists.
+ */
+function renderPerson(person) {
+  if (!person) return '—';
+  return (
+    <>
+      {person.name ? (
+        <>
+          {person.name}
+          <br />
+        </>
+      ) : null}
+      <span className="mono">{person.email}</span>
+      {person.phone ? (
+        <>
+          <br />
+          {person.phone}
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * Admin-only dashboard: the queue of matches where the claimant already
  * answered the verification question correctly (status VERIFIED), but the
  * item is still sitting with admin -- nobody's clicked "handed over" yet.
@@ -95,30 +122,8 @@ export default function Admin() {
                     {p.category ? ` (${p.category})` : ''}
                   </td>
                   <td>{p.collection_point || '—'}</td>
-                  <td>
-                    {p.finder ? (
-                      <>
-                        {p.finder.name || p.finder.email}
-                        <br />
-                        <span className="mono">{p.finder.email}</span>
-                        {p.finder.phone ? <><br />{p.finder.phone}</> : null}
-                      </>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td>
-                    {p.owner ? (
-                      <>
-                        {p.owner.name || p.owner.email}
-                        <br />
-                        <span className="mono">{p.owner.email}</span>
-                        {p.owner.phone ? <><br />{p.owner.phone}</> : null}
-                      </>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
+                  <td>{renderPerson(p.finder)}</td>
+                  <td>{renderPerson(p.owner)}</td>
                   <td className="mono">{formatDate(p.verified_at)}</td>
                   <td>
                     <button
