@@ -1039,6 +1039,10 @@ button {
   text-decoration: underline;
 }
 
+.notice-footer-link--danger {
+  color: var(--lost);
+}
+
 .notice-primary-action {
   width: 100%;
   margin-top: 12px;
