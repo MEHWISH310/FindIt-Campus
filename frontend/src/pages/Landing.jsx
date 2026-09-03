@@ -322,7 +322,7 @@ export default function Landing() {
             Report something lost
             <ArrowIcon />
           </Link>
-          <Link to="/lost" className="cta cta--ghost">
+          <Link to="/lost" className="cta cta--found">
             Browse open notices
             <ArrowIcon />
           </Link>
