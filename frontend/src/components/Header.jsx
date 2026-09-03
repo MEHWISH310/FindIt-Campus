@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
 import ThemeToggle from './ThemeToggle';
 import Modal from './Modal';
-import { listReports, listCustodyRecords, REPORTS_CHANGED_EVENT } from '../api/client';
+import { listReports, listCustodyRecords, listPendingPickups, REPORTS_CHANGED_EVENT } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 // Auth screens (login, first-time signup, and the set-a-new-password
@@ -11,26 +11,35 @@ import { useAuth } from '../context/AuthContext';
 const HEADERLESS_ROUTES = ['/login', '/request-access', '/forgot-password', '/set-password'];
 
 export default function Header() {
-  const [counts, setCounts] = useState({ lost: null, found: null, claimed: null });
+  const [counts, setCounts] = useState({ lost: null, found: null, claimed: null, pickups: null });
   const [logoutOpen, setLogoutOpen] = useState(false);
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
 
   const refreshCounts = useCallback(() => {
-    Promise.all([listReports('lost'), listReports('found'), listCustodyRecords()])
-      .then(([lost, found, claimed]) => {
+    Promise.all([
+      listReports('lost'),
+      listReports('found'),
+      listCustodyRecords(),
+      // Only admins can call this (backend 403s everyone else) -- and
+      // there's no point showing a pickups badge to non-admins anyway,
+      // since they can't see the Pickups nav item at all.
+      user?.is_admin ? listPendingPickups() : Promise.resolve(null),
+    ])
+      .then(([lost, found, claimed, pickups]) => {
         // Total count of every report of that type -- resolved/claimed
         // reports still count, they just aren't excluded here anymore.
         setCounts({
           lost: (lost ?? []).length,
           found: (found ?? []).length,
           claimed: (claimed ?? []).length,
+          pickups: pickups ? pickups.length : null,
         });
       })
       .catch(() => {
-        setCounts({ lost: 0, found: 0, claimed: 0 });
+        setCounts({ lost: 0, found: 0, claimed: 0, pickups: null });
       });
-  }, []);
+  }, [user?.is_admin]);
 
   useEffect(() => {
     refreshCounts();
@@ -77,6 +86,7 @@ export default function Header() {
           {user.is_admin && (
             <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
               Pickups
+              {counts.pickups !== null && <span className="nav-count">{counts.pickups}</span>}
             </NavLink>
           )}
         </nav>
