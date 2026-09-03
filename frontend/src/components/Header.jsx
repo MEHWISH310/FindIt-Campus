@@ -40,6 +40,13 @@ export default function Header() {
     return () => window.removeEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
   }, [refreshCounts]);
 
+  // Header stays mounted across logout (it just renders null), so the
+  // confirm dialog's open state would otherwise survive and pop up again
+  // on the next login. Clear it whenever the session ends, for any reason.
+  useEffect(() => {
+    if (!user) setLogoutOpen(false);
+  }, [user]);
+
   // Header only shows once logged in, and never on the auth screens.
   if (!user || HEADERLESS_ROUTES.includes(pathname)) {
     return null;
