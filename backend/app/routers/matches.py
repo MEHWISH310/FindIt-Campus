@@ -2,7 +2,14 @@
 POST /matches/find/{report_id} runs the actual matching pipeline:
   1. pull the report + every opposite-type OPEN report
   2. score each pair with fusion.composite_score()
-  3. save the results as Match rows, sorted best-first
+  3. save the results as Match rows, sorted best-first -- reusing any
+     Match row that already exists for a given lost/found pair instead
+     of inserting a duplicate every time this endpoint is called (e.g.
+     every time someone opens/refreshes the matches page)
+
+The real-time ping and "possible match" email only fire the first time
+a given pair becomes the top match, not on every subsequent call -- see
+the notes on the notification block below.
 
 Calibration (turning raw_score into a probability) loads a persisted,
 pre-fitted MatchCalibrator from disk if one exists (see
@@ -205,34 +212,72 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     competing_ids = {scored[i][0].id for i in cluster_indices}
     needs_disambiguation = len(competing_ids) >= 2
 
+    # Dedupe against matches already saved for this report (from an
+    # earlier call to this same endpoint -- e.g. someone just refreshing
+    # the matches page). Without this, every single page-load created
+    # brand-new duplicate Match rows for the same lost/found pair AND
+    # re-sent the "possible match" email every time, regardless of
+    # whether anything had actually changed -- that's what was causing a
+    # dozens-of-emails-in-minutes spam storm from repeat visits/refreshes.
+    existing_by_pair = {
+        (m.lost_report_id, m.found_report_id): m
+        for m in db.query(Match)
+        .filter((Match.lost_report_id == report.id) | (Match.found_report_id == report.id))
+        .all()
+    }
+
     saved_matches = []
-    for candidate, result in scored[:5]:  # keep top 5 candidates
+    top_match_is_new = False
+    for i, (candidate, result) in enumerate(scored[:5]):  # keep top 5 candidates
         lost_id = report.id if report.report_type == ReportType.LOST else candidate.id
         found_id = candidate.id if report.report_type == ReportType.LOST else report.id
         in_cluster = needs_disambiguation and candidate.id in competing_ids
 
         match_probability = _calibrator.predict_proba(result["score"]) if _calibrator else None
 
-        match = Match(
-            lost_report_id=lost_id,
-            found_report_id=found_id,
-            raw_score=result["score"],
-            match_probability=match_probability,
-            used_signals=result["used_signals"],
-            signal_weights=result["weights"],
-            status=MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE,
-            disambiguation_question=_disambiguation_question(candidate) if in_cluster else None,
-        )
-        db.add(match)
+        existing = existing_by_pair.get((lost_id, found_id))
+        is_new = existing is None
+
+        if existing:
+            match = existing
+            # Only refresh the score/signals if nobody's acted on this
+            # match yet -- once it's VERIFIED/CONFIRMED/REJECTED, leave it
+            # alone instead of silently rewriting state out from under
+            # whatever the claimant/admin already did.
+            if match.status in (MatchStatus.CANDIDATE, MatchStatus.NEEDS_DISAMBIGUATION):
+                match.raw_score = result["score"]
+                match.match_probability = match_probability
+                match.used_signals = result["used_signals"]
+                match.signal_weights = result["weights"]
+                match.status = MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE
+                match.disambiguation_question = _disambiguation_question(candidate) if in_cluster else None
+        else:
+            match = Match(
+                lost_report_id=lost_id,
+                found_report_id=found_id,
+                raw_score=result["score"],
+                match_probability=match_probability,
+                used_signals=result["used_signals"],
+                signal_weights=result["weights"],
+                status=MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE,
+                disambiguation_question=_disambiguation_question(candidate) if in_cluster else None,
+            )
+            db.add(match)
+
+        if i == 0:
+            top_match_is_new = is_new
         saved_matches.append(match)
 
     db.commit()
     for m in saved_matches:
         db.refresh(m)
 
-    # Real-time "match found" ping -- only for a genuinely strong top
-    # candidate, so this doesn't fire for every low-confidence guess.
-    if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD:
+    # Real-time "match found" ping + email -- only for a genuinely strong
+    # top candidate, AND only the first time this exact pair shows up as
+    # the top match. Otherwise every subsequent page visit for the same
+    # report (by the owner, or by anyone who can reach the matches page)
+    # would re-trigger both, which is what caused the email spam.
+    if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD and top_match_is_new:
         top_candidate, top_result = scored[0]
         top_probability = _calibrator.predict_proba(top_result["score"]) if _calibrator else None
         await sio.emit(
