@@ -23,7 +23,7 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="report-page">
+    <div className="report-page auth-page">
       <div className="report-card">
         <h1 className="report-heading">Forgot password</h1>
         <p className="verification-note">
@@ -33,7 +33,7 @@ export default function ForgotPassword() {
 
         {sent ? (
           <p className="claim-form-success-note">
-            ✅ If that email has an account, a temporary password has been sent. Check your
+            If that email has an account, a temporary password has been sent. Check your
             inbox, then <Link to="/login">log in</Link>.
           </p>
         ) : (
@@ -45,7 +45,7 @@ export default function ForgotPassword() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you.2023@vitstudent.ac.in"
+                placeholder="mail.20XX@vitstudent.ac.in"
               />
             </label>
 

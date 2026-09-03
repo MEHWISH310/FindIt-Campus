@@ -57,7 +57,7 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
 
       {result?.verified ? (
         <div className="claim-form claim-form--success">
-          <p>✅ {result.message}</p>
+          <p>{result.message}</p>
           <button type="button" className="claim-form-cancel" onClick={onClose}>
             Close
           </button>
@@ -259,7 +259,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
               compact
               primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
             />
-            {isConfirmed && <p className="claim-form-success-note">✅ Already claimed and confirmed.</p>}
+            {isConfirmed && <p className="claim-form-success-note">Already claimed and confirmed.</p>}
             {isConfirmed && gatedInfo?.found_contact && (
               <div className="claim-form-success-note">
                 <strong>Finder's contact:</strong> {gatedInfo.found_contact.name || 'N/A'} —{' '}

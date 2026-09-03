@@ -628,10 +628,20 @@ button {
 
 .dashboard-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+/* Right-hand cluster of the dashboard heading row: the "Report lost /
+   found" button (moved here out of the site header) plus, on the Found
+   page, the escalation-check button. */
+.dashboard-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -693,20 +703,166 @@ button {
   color: var(--lost);
 }
 
+/* --- Profile / "My account" page — pages/Profile.jsx ---------------- */
+
+.profile {
+  padding: 48px 24px 100px;
+}
+
+.profile .dashboard-head {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 24px;
+}
+
+.profile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-name {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.profile-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.profile-edit-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.profile-email {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.profile-section {
+  margin-top: 44px;
+}
+
+/* Right-aligned button row inside the name / password modals. */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.modal-actions .submit-btn {
+  align-self: auto;
+  margin-top: 0;
+}
+
+/* Cancel keeps its ghost colours but matches the pill shape + height of
+   the primary button beside it. */
+.modal-actions .claim-form-cancel {
+  border-radius: 999px;
+  height: auto;
+  padding: 0 22px;
+}
+
+.profile-section-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.profile-section-title--lost {
+  color: var(--lost);
+}
+
+.profile-section-title--found {
+  color: var(--found);
+}
+
+.profile-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 8px 0;
+  margin: 0;
+}
+
+.profile-empty--error {
+  color: var(--lost);
+}
+
+/* Vertical rhythm for a form with no card chrome -- used by
+   <ChangePasswordForm bare /> inside the "Reset password" modal. */
+.stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-note {
+  margin: -6px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 16px;
+  /* Every row takes the height of the tallest card, so all cards in the
+     grid end up the same size regardless of how much content each has. */
+  grid-auto-rows: 1fr;
+}
+
+/* The per-card index wrapper needs to stretch to the row height so the
+   card inside can fill it. */
+.dashboard-grid > * {
+  display: flex;
 }
 
 .dashboard-grid .notice-card {
   animation: card-in 0.35s var(--ease) backwards;
   animation-delay: calc(var(--card-index, 0) * 40ms);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Pin the footer (timestamp / actions) to the bottom of the card so the
+   extra height on shorter cards becomes empty space below the content
+   rather than a gap that leaves the footer floating mid-card. */
+.dashboard-grid .notice-card .notice-footer {
+  margin-top: auto;
 }
 
 @media (max-width: 480px) {
   .page-shell {
     padding: 0 16px;
+  }
+
+  .profile {
+    padding: 32px 16px 72px;
+  }
+
+  .profile .dashboard-head {
+    flex-direction: column;
   }
 
   .dashboard-grid {
@@ -915,6 +1071,28 @@ button {
   padding: 48px 24px 100px;
 }
 
+/* The report-lost / report-found form has a lot of fields (and 2-col
+   rows), so it gets a roomier width than the narrow auth cards. */
+.report-page--wide {
+  max-width: 900px;
+}
+
+.report-page--wide .report-card {
+  padding: 40px;
+}
+
+/* Auth screens (login / signup / reset) render without the site header,
+   so give them the full viewport and vertically centre the card. The
+   compound selector keeps its padding ahead of the mobile .report-page
+   override further down the file. */
+.report-page.auth-page {
+  min-height: 100vh;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .back-link {
   display: inline-flex;
   align-items: center;
@@ -1052,6 +1230,18 @@ button {
   color: var(--text-muted);
 }
 
+/* Emphasised inline link on the auth screens -- green + bold so the
+   "Request access" call-to-action stands out from the muted note text. */
+.auth-link-accent {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.auth-link-accent:hover {
+  text-decoration: none;
+}
+
 .form-error {
   color: var(--lost);
   font-size: 0.85rem;
@@ -1170,7 +1360,7 @@ button {
 
 .submit-btn:disabled {
   opacity: 0.5;
-  cursor: wait;
+  cursor: not-allowed;
 }
 
 @media (max-width: 640px) {
@@ -1178,7 +1368,8 @@ button {
     padding: 28px 16px 64px;
   }
 
-  .report-card {
+  .report-card,
+  .report-page--wide .report-card {
     padding: 22px;
     gap: 16px;
   }
@@ -1520,6 +1711,13 @@ button {
   margin: 0 0 16px;
   font-size: 1.1rem;
   font-weight: 700;
+}
+
+.modal-text {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
 @keyframes modal-fade-in {

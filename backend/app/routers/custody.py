@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.custody import CustodyRecord
+from app.models.match import Match
+from app.models.report import Report
+from app.models.user import User
+from app.routers.auth import get_current_user
 from app.routers.schemas import CustodyRecordOut
 
 router = APIRouter(prefix="/custody", tags=["custody"])
@@ -21,6 +25,27 @@ router = APIRouter(prefix="/custody", tags=["custody"])
 def list_custody_records(db: Session = Depends(get_db)):
     return (
         db.query(CustodyRecord)
+        .order_by(CustodyRecord.handover_datetime.desc())
+        .all()
+    )
+
+
+@router.get("/mine", response_model=List[CustodyRecordOut])
+def list_my_custody_records(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Handovers where the logged-in user is the claimant -- i.e. the person
+    who filed the LOST report behind the match. CustodyRecord itself only
+    stores the free-text claimant_name typed into the claim form, so
+    ownership is derived by walking match -> lost report -> reporter_id.
+    """
+    return (
+        db.query(CustodyRecord)
+        .join(Match, Match.id == CustodyRecord.match_id)
+        .join(Report, Report.id == Match.lost_report_id)
+        .filter(Report.reporter_id == user.id)
         .order_by(CustodyRecord.handover_datetime.desc())
         .all()
     )

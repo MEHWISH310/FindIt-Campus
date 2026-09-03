@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { listReports, escalateStale } from '../api/client';
 import NoticeCard from '../components/NoticeCard';
 
@@ -66,17 +66,22 @@ export default function Dashboard({ reportType }) {
           {label}
           {!loading && !error && <span className="dashboard-count">{reports.length}</span>}
         </h1>
-        {reportType === 'found' && (
-          <button
-            type="button"
-            className="escalation-check-btn"
-            onClick={handleEscalationCheck}
-            disabled={escalating}
-            title="Marks unclaimed ID/phone/document reports older than 7 days as escalated"
-          >
-            {escalating ? 'Checking…' : 'Run escalation check'}
-          </button>
-        )}
+        <div className="dashboard-head-actions">
+          {reportType === 'found' && (
+            <button
+              type="button"
+              className="escalation-check-btn"
+              onClick={handleEscalationCheck}
+              disabled={escalating}
+              title="Marks unclaimed ID/phone/document reports older than 7 days as escalated"
+            >
+              {escalating ? 'Checking…' : 'Run escalation check'}
+            </button>
+          )}
+          <Link to={`/report/${reportType}`} className={`header-btn header-btn--${reportType}`}>
+            Report {reportType}
+          </Link>
+        </div>
       </div>
 
       {escalationResult && <p className="dashboard-status">{escalationResult}</p>}

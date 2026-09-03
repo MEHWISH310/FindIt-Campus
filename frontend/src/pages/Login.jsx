@@ -34,12 +34,15 @@ export default function Login() {
   }
 
   return (
-    <div className="report-page">
+    <div className="report-page auth-page">
       <form className="report-card" onSubmit={handleSubmit}>
         <h1 className="report-heading">Log in</h1>
         <p className="verification-note">
-          Use your @vitstudent.ac.in email. First time here? Use{' '}
-          <Link to="/request-access">Request access</Link> to get a temporary password.
+          First time here? Use{' '}
+          <Link to="/request-access" className="auth-link-accent">
+            Request access
+          </Link>{' '}
+          to get a temporary password.
         </p>
 
         <label className="field">
@@ -49,7 +52,7 @@ export default function Login() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you.2023@vitstudent.ac.in"
+            placeholder="mail.20XX@vitstudent.ac.in"
           />
         </label>
 

@@ -37,7 +37,7 @@ export default function SetPassword() {
   }
 
   return (
-    <div className="report-page">
+    <div className="report-page auth-page">
       <form className="report-card" onSubmit={handleSubmit}>
         <h1 className="report-heading">Set a new password</h1>
         <p className="verification-note">
