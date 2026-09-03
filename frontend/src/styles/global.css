@@ -1325,6 +1325,23 @@ button {
   margin-top: 44px;
 }
 
+/* Lost + Found sit side by side while each holds at most one card, so a
+   lone card doesn't leave half the row empty. Drops back to stacked
+   full-width via the JS toggle the moment either list has 2+ cards. */
+.profile-reports--split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .profile-reports--split {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
 /* Right-aligned button row inside the name / password modals. */
 .modal-actions {
   display: flex;
