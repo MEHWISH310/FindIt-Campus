@@ -178,6 +178,24 @@ button {
   padding: 0 24px;
 }
 
+/* Sticky-footer layout: the shell fills at least the viewport, the main
+   region grows to take up any slack, so a short page (e.g. Claimed items
+   with two rows) still drops the footer to the bottom edge. */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-main {
+  flex: 1 0 auto;
+}
+
+.app-shell .site-footer {
+  flex-shrink: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;
@@ -414,7 +432,109 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   3. Landing page — pages/Landing.jsx
+   2b. Footer: components/Footer.jsx
+   -------------------------------------------------------------------------- */
+
+.site-footer {
+  margin-top: 32px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
+.site-footer-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 36px 24px 28px;
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  gap: 32px;
+}
+
+.site-footer-brand {
+  max-width: 280px;
+}
+
+.site-footer-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.site-footer-tagline {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.site-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.site-footer-heading {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.site-footer-col a {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition: color 0.15s var(--ease);
+}
+
+.site-footer-col a:hover {
+  color: var(--text);
+}
+
+.site-footer-bottom {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 18px 24px 28px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .site-footer {
+    margin-top: 24px;
+  }
+
+  .site-footer-inner {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px 24px;
+  }
+
+  .site-footer-brand {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .site-footer-inner {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3. Landing page: pages/Landing.jsx
    -------------------------------------------------------------------------- */
 
 .landing-hero-wrap {

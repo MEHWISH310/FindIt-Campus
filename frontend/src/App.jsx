@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Header from './components/Header';
+import Footer from './components/Footer';
+import ScrollToTop from './components/ScrollToTop';
 import ChatWidget from './components/ChatWidget';
 import NotificationToast from './components/NotificationToast';
 import Landing from './pages/Landing';
@@ -22,98 +24,106 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Header />
-        <NotificationToast />
-        <ChatWidget /> 
-        <Routes>
-          {/* Public: only the auth pages themselves. Everything else --
-              including the landing page -- requires login, so someone
-              hitting "/" logged out is bounced straight to /login. */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/request-access" element={<RequestAccess />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
+        <ScrollToTop />
+        {/* Flex column so a short page still pushes the footer to the
+            bottom of the viewport instead of leaving it mid-screen. */}
+        <div className="app-shell">
+          <Header />
+          <NotificationToast />
+          <ChatWidget />
+          <main className="app-main">
+            <Routes>
+              {/* Public: only the auth pages themselves. Everything else --
+                  including the landing page -- requires login, so someone
+                  hitting "/" logged out is bounced straight to /login. */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/request-access" element={<RequestAccess />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
 
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Landing />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/lost"
-            element={
-              <ProtectedRoute>
-                <Dashboard reportType="lost" />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/found"
-            element={
-              <ProtectedRoute>
-                <Dashboard reportType="found" />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/claimed"
-            element={
-              <ProtectedRoute>
-                <ClaimedItems />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/me"
-            element={
-              <ProtectedRoute>
-                <Profile />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/set-password"
-            element={
-              <ProtectedRoute>
-                <SetPassword />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/change-password"
-            element={
-              <ProtectedRoute>
-                <ChangePassword />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/report/:type"
-            element={
-              <ProtectedRoute>
-                <ReportForm />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/matches/:reportId"
-            element={
-              <ProtectedRoute>
-                <Matches />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute adminOnly>
-                <Admin />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Landing />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/lost"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard reportType="lost" />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/found"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard reportType="found" />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/claimed"
+                element={
+                  <ProtectedRoute>
+                    <ClaimedItems />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/me"
+                element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/set-password"
+                element={
+                  <ProtectedRoute>
+                    <SetPassword />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/change-password"
+                element={
+                  <ProtectedRoute>
+                    <ChangePassword />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/report/:type"
+                element={
+                  <ProtectedRoute>
+                    <ReportForm />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/matches/:reportId"
+                element={
+                  <ProtectedRoute>
+                    <Matches />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute adminOnly>
+                    <Admin />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
       </BrowserRouter>
     </AuthProvider>
   );
