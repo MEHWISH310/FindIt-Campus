@@ -7,8 +7,10 @@ import { useAuth } from '../context/AuthContext';
  * token) it renders nothing rather than briefly flashing the login page.
  * Also bounces a logged-in-but-must-set-password user to /set-password
  * first, since nothing else should be usable until that's done.
+ * Pass adminOnly to also bounce non-admin users back to "/" -- used for
+ * /admin (see App.jsx).
  */
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute({ children, adminOnly = false }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -20,6 +22,10 @@ export default function ProtectedRoute({ children }) {
 
   if (user.must_set_password && location.pathname !== '/set-password') {
     return <Navigate to="/set-password" replace />;
+  }
+
+  if (adminOnly && !user.is_admin) {
+    return <Navigate to="/" replace />;
   }
 
   return children;

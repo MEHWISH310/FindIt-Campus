@@ -52,4 +52,12 @@ class User(Base):
     # in this codebase -- forces a "set new password" screen on first login.
     must_set_password = Column(String(5), default="true")
 
+    # "true"/"false" string, same pattern as must_set_password/is_high_risk.
+    # Admin accounts are seeded directly (see seed_admins.py) with a real
+    # email/password rather than going through /auth/request-access, since
+    # they don't have to be @vitstudent.ac.in addresses. Admins can see who
+    # filed a report (reporter identity) and confirm physical handovers --
+    # regular users never see who filed a report they're not party to.
+    is_admin = Column(String(5), default="false")
+
     created_at = Column(DateTime, default=datetime.utcnow)

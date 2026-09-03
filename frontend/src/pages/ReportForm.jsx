@@ -30,6 +30,7 @@ const emptyForm = {
   item_datetime: '',
   hidden_question: '',
   hidden_answer: '',
+  collection_point: '',
 };
 
 export default function ReportForm() {
@@ -111,6 +112,10 @@ export default function ReportForm() {
       setError('A verification question is required for found reports.');
       return;
     }
+    if (isFound && !form.collection_point.trim()) {
+      setError('Tell us where admin will be holding this item so the owner knows where to collect it.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -127,6 +132,7 @@ export default function ReportForm() {
         item_datetime: form.item_datetime ? new Date(form.item_datetime).toISOString() : null,
         hidden_question: form.hidden_question,
         hidden_answer: form.hidden_answer,
+        collection_point: form.collection_point,
       };
       const report = await createReport(payload);
 
@@ -322,6 +328,18 @@ export default function ReportForm() {
                 value={form.hidden_answer}
                 onChange={(e) => update('hidden_answer', e.target.value)}
               />
+            </label>
+            <label className="field">
+              <span>Where will you hand this item over to admin? *</span>
+              <input
+                required
+                value={form.collection_point}
+                onChange={(e) => update('collection_point', e.target.value)}
+                placeholder="e.g. Main Gate security desk"
+              />
+              <p className="photo-hint">
+                Once handed over, the owner will be told to collect it from here.
+              </p>
             </label>
           </div>
         )}

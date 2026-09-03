@@ -15,6 +15,7 @@ import RequestAccess from './pages/RequestAccess';
 import ForgotPassword from './pages/ForgotPassword';
 import SetPassword from './pages/SetPassword';
 import ChangePassword from './pages/ChangePassword';
+import Admin from './pages/Admin';
 import './styles/global.css';
 
 export default function App() {
@@ -101,6 +102,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Matches />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute adminOnly>
+                <Admin />
               </ProtectedRoute>
             }
           />

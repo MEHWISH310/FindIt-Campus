@@ -12,7 +12,6 @@ null, so the UI falls back to showing raw_score/ranking.
 """
 
 import math
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -39,7 +38,6 @@ from app.routers.schemas import (
 from app.matching.embeddings import cosine_sim
 from app.matching.fusion import ReportSignals, composite_score, competing_cluster
 from app.matching.calibration import MatchCalibrator
-from app.matching.redaction import reveal_photos
 from app.realtime import sio
 from app.core.email import send_email
 from app.routers.auth import get_current_user_optional
@@ -287,24 +285,28 @@ async def verify_claim(
     never show them hidden_answer, we just check equality server-side.
 
     On a correct answer:
-      - match.status -> CONFIRMED
-      - both the lost and found reports -> RESOLVED
-      - a CustodyRecord is written as the audit trail of the handover
+      - match.status -> VERIFIED (NOT yet CONFIRMED -- the item is still
+        sitting with admin; the finder already handed it over physically
+        when they filed the found report, and admin only marks it
+        CONFIRMED once they've actually handed it to the owner in person.
+        See custody.py's confirm_handover.)
+      - reports are left as-is (still MATCHED) -- they only flip to
+        RESOLVED at the actual handover, not at verification time
+      - no CustodyRecord yet, no email to the finder yet -- both happen
+        at handover, so the finder is only told once the item has
+        genuinely left admin's hands, not just because someone answered
+        a question correctly online
 
     On a wrong answer: 200 with verified=false (not a 4xx -- this is an
     expected outcome the frontend needs to render inline, not an error),
     match/report state is left untouched so they can retry.
-
-    No staff/auth layer exists yet, so verifier_name is a placeholder --
-    swap this for the logged-in staff/volunteer's name once auth (backlog
-    Task 8) lands.
     """
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(404, "Match not found")
 
-    if match.status == MatchStatus.CONFIRMED:
-        raise HTTPException(400, "This match has already been confirmed and claimed.")
+    if match.status in (MatchStatus.VERIFIED, MatchStatus.CONFIRMED):
+        raise HTTPException(400, "This match has already been verified and is awaiting/complete pickup.")
     if match.status == MatchStatus.REJECTED:
         raise HTTPException(400, "This match was rejected and can no longer be claimed.")
 
@@ -328,66 +330,34 @@ async def verify_claim(
             custody_record=None,
         )
 
-    match.status = MatchStatus.CONFIRMED
-    found_report.status = ReportStatus.RESOLVED
-    lost_report.status = ReportStatus.RESOLVED
-
-    # Claim's verified, so the redaction has done its job -- swap the
-    # clear originals back over the public photo paths (no-op if this
-    # report was never high-risk / never had photos; see redaction.py).
-    if found_report.is_high_risk == "true" and found_report.photo_paths:
-        report_dir = os.path.join(settings.upload_dir, str(found_report.id))
-        filenames = [os.path.basename(p) for p in found_report.photo_paths]
-        reveal_photos(report_dir, filenames)
-
-    record = CustodyRecord(
-        match_id=match.id,
-        item_name=found_report.title,
-        claimant_name=payload.claimant_name,
-        claimant_contact=payload.claimant_contact,
-        verifier_name="Self-service verification (no staff auth yet)",
-        notes=payload.notes,
-        identity_verified="true",
-    )
-    db.add(record)
+    match.status = MatchStatus.VERIFIED
+    # Stash who's coming to collect it and how to reach them -- admin needs
+    # this at handover time to write the real CustodyRecord (see
+    # custody.py's confirm_handover).
+    match.pending_claimant_name = payload.claimant_name
+    match.pending_claimant_contact = payload.claimant_contact
+    match.pending_claimant_notes = payload.notes
     db.commit()
     db.refresh(match)
-    db.refresh(record)
 
     await sio.emit(
-        "item:claimed",
+        "match:verified",
         {
             "match_id": str(match.id),
-            "item_name": record.item_name,
-            "claimant_name": record.claimant_name,
+            "item_name": found_report.title,
+            "claimant_name": payload.claimant_name,
         },
     )
 
-    # Email the FOUND-side reporter that someone has claimed their item --
-    # per the flow, the finder never sees the claimant's details in the
-    # email itself, only that a claim happened; they view the actual name
-    # /contact on the site (GET /matches/{id}, gated to them once
-    # CONFIRMED -- see _build_match_out).
-    if found_report.reporter_id:
-        finder = db.query(User).filter(User.id == found_report.reporter_id).first()
-        if finder:
-            send_email(
-                to_email=finder.email,
-                subject="Someone claimed the item you found",
-                body=(
-                    f"Hi {finder.name or ''},\n\n"
-                    f"A person has claimed the item you reported found (\"{found_report.title}\") "
-                    "and correctly answered your verification question.\n\n"
-                    f"See their details on the site: {settings.frontend_base_url}/matches/{lost_report.id}\n\n"
-                    "Thanks for helping return it!"
-                ),
-            )
-
     return ClaimResponse(
         verified=True,
-        message="Verified! This item has been marked as returned to its owner.",
+        message=(
+            f"Verified! Go collect this item from admin"
+            f"{f' at {found_report.collection_point}' if found_report.collection_point else ''}."
+        ),
         match=_build_match_out(match, db, user),
-        custody_record=record,
+        custody_record=None,
+        collection_point=found_report.collection_point,
     )
 
 

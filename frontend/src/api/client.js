@@ -258,3 +258,22 @@ export function sendChatMessage(message, history = []) {
     body: JSON.stringify({ message, history }),
   });
 }
+
+// --- Admin ---------------------------------------------------------------
+// All three require the logged-in user to have is_admin=true (see
+// backend's require_admin) -- a 403 comes back otherwise.
+
+/** GET /custody/admin/pending-pickups — matches that are VERIFIED (claimant
+ * answered correctly) but not yet physically handed over. */
+export function listPendingPickups() {
+  return request('/custody/admin/pending-pickups');
+}
+
+/** POST /custody/admin/{match_id}/handover — admin confirms the item has
+ * physically been handed to the owner. Resolves both reports, writes the
+ * CustodyRecord, and emails the finder. */
+export async function confirmHandover(matchId) {
+  const result = await request(`/custody/admin/${matchId}/handover`, { method: 'POST' });
+  notifyReportsChanged();
+  return result;
+}

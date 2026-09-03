@@ -95,6 +95,7 @@ class UserOut(BaseModel):
     phone: Optional[str]
     registration_number: Optional[str]
     must_set_password: bool
+    is_admin: bool = False
 
     @staticmethod
     def from_model(user: User) -> "UserOut":
@@ -105,6 +106,7 @@ class UserOut(BaseModel):
             phone=user.phone,
             registration_number=user.registration_number,
             must_set_password=user.must_set_password == "true",
+            is_admin=user.is_admin == "true",
         )
 
 
@@ -129,6 +131,17 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(401, "Invalid session")
+    return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Same as get_current_user, but 403s anyone whose is_admin isn't
+    'true'. Use this instead of get_current_user on any endpoint that
+    should only be reachable by the two seeded admin accounts (see
+    seed_admins.py) -- e.g. confirming a physical handover, or viewing
+    which student filed a given report."""
+    if user.is_admin != "true":
+        raise HTTPException(403, "Admin access required.")
     return user
 
 

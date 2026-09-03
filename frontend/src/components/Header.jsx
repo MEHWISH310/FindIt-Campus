@@ -67,6 +67,11 @@ export default function Header() {
             Claimed
             {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
           </NavLink>
+          {user.is_admin && (
+            <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
+              Admin
+            </NavLink>
+          )}
         </nav>
 
         <div className="site-actions">

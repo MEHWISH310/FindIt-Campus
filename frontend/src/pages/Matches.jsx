@@ -12,6 +12,10 @@ function isRejected(match) {
   return match.status === 'REJECTED' || match.status === 'rejected';
 }
 
+function isVerified(match) {
+  return match.status === 'VERIFIED' || match.status === 'verified';
+}
+
 /**
  * Claim/verification popup. Only ever shown for a FOUND counterpart report
  * -- the claimant is proving the item is theirs by answering the finder's
@@ -201,6 +205,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
   const needsReview = isNeedsReview(match);
   const isConfirmed = match.status === 'CONFIRMED' || match.status === 'confirmed';
+  const verifiedPendingPickup = isVerified(match);
   const hasProbability = match.match_probability != null;
   const pct = hasProbability
     ? Math.round(match.match_probability * 100)
@@ -242,7 +247,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
 
   // Claiming only makes sense against a FOUND report that's still open --
   // that's the side holding the hidden_question a claimant must answer.
-  const claimable = counterpart?.report_type === 'found' && counterpart?.status === 'open' && !isConfirmed;
+  const claimable = counterpart?.report_type === 'found' && counterpart?.status === 'open' && !isConfirmed && !verifiedPendingPickup;
 
   return (
     <div
@@ -260,6 +265,12 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
               primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
             />
             {isConfirmed && <p className="claim-form-success-note">Already claimed and confirmed.</p>}
+            {verifiedPendingPickup && (
+              <p className="claim-form-success-note">
+                Verified! Go collect this item from admin
+                {counterpart?.collection_point ? ` at ${counterpart.collection_point}` : ''}.
+              </p>
+            )}
             {isConfirmed && gatedInfo?.found_contact && (
               <div className="claim-form-success-note">
                 <strong>Finder's contact:</strong> {gatedInfo.found_contact.name || 'N/A'} —{' '}
