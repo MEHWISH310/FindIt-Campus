@@ -15,6 +15,7 @@ from google.genai import types
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Literal
+from fastapi import APIRouter, Header
 
 from app.core.config import settings
 
@@ -91,12 +92,13 @@ class ChatResponse(BaseModel):
     history: List[ChatMessage]
 
 
-async def _run_tool(name: str, tool_input: dict) -> dict:
+async def _run_tool(name: str, tool_input: dict, auth_header: str | None) -> dict:
+    headers = {"Authorization": auth_header} if auth_header else {}
     async with httpx.AsyncClient(base_url=INTERNAL_BASE_URL, timeout=30) as client_http:
         if name == "create_report":
-            resp = await client_http.post("/reports/", json=tool_input)
+            resp = await client_http.post("/reports/", json=tool_input, headers=headers)
         elif name == "find_matches":
-            resp = await client_http.post(f"/matches/find/{tool_input['report_id']}")
+            resp = await client_http.post(f"/matches/find/{tool_input['report_id']}", headers=headers)
         else:
             return {"error": f"unknown tool {name}"}
         try:
@@ -108,9 +110,8 @@ async def _run_tool(name: str, tool_input: dict) -> dict:
 def _to_gemini_role(role: str) -> str:
     return "model" if role == "assistant" else "user"
 
-
 @router.post("/message", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, authorization: str | None = Header(default=None)):
     contents = [
         types.Content(role=_to_gemini_role(m.role), parts=[types.Part(text=m.content)])
         for m in req.history
@@ -145,7 +146,7 @@ async def chat(req: ChatRequest):
 
         function_response_parts = []
         for fc in function_calls:
-            result = await _run_tool(fc.name, dict(fc.args))
+            result = await _run_tool(fc.name, dict(fc.args), authorization)
             function_response_parts.append(
                 types.Part(function_response=types.FunctionResponse(
                     name=fc.name,
