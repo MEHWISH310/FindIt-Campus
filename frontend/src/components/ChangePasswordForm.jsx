@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { changePassword, ApiError } from '../api/client';
 
 /**
- * The change-password form on its own -- no page chrome. Used by the
- * standalone /change-password page and by the profile page's "Reset
- * password" modal, so the two never drift apart.
+ * The change-password form on its own -- no page chrome. Both entry points
+ * (the profile page's "Reset password" modal and the standalone
+ * /change-password route) render it with `bare`, so the UI never drifts.
  *
  * bare: drop the bordered card styling + built-in heading, so the caller
  *   can slot it into an existing container (a modal, a section).
