@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { login as loginApi, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import PasswordInput from '../components/PasswordInput';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -52,14 +53,13 @@ export default function Login() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@vitstudent.ac.in or name@vit.ac.in"
+            placeholder="mail.20XX@vitstudent.ac.in"
           />
         </label>
 
         <label className="field">
           <span>Password</span>
-          <input
-            type="password"
+          <PasswordInput
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -73,8 +73,13 @@ export default function Login() {
         </button>
 
         <p className="verification-note">
-          Forgot your password? <Link to="/forgot-password">Reset it</Link>
+          Forgot your password?{' '}
+          <Link to="/forgot-password" className="auth-link-accent">
+            Reset it
+          </Link>
         </p>
+
+        
       </form>
     </div>
   );

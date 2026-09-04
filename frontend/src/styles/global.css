@@ -1400,6 +1400,41 @@ button {
   color: var(--text-muted);
 }
 
+.password-input {
+  position: relative;
+  display: flex;
+}
+
+/* .field input already styles this via the descendant selector below --
+   this just widens it to fill the wrapper and leaves room for the icon. */
+.password-input input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+.password-input-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.password-input-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));

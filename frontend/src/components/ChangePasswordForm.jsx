@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { changePassword, ApiError } from '../api/client';
+import PasswordInput from './PasswordInput';
 
 /**
  * The change-password form on its own -- no page chrome. Both entry points
@@ -53,8 +54,7 @@ export default function ChangePasswordForm({ bare = false, onCancel, onSuccess }
 
       <label className="field">
         <span>Current password</span>
-        <input
-          type="password"
+        <PasswordInput
           required
           value={oldPassword}
           onChange={(e) => setOldPassword(e.target.value)}
@@ -63,8 +63,7 @@ export default function ChangePasswordForm({ bare = false, onCancel, onSuccess }
 
       <label className="field">
         <span>New password</span>
-        <input
-          type="password"
+        <PasswordInput
           required
           minLength={8}
           value={newPassword}
@@ -74,8 +73,7 @@ export default function ChangePasswordForm({ bare = false, onCancel, onSuccess }
 
       <label className="field">
         <span>Confirm new password</span>
-        <input
-          type="password"
+        <PasswordInput
           required
           minLength={8}
           value={confirmPassword}
