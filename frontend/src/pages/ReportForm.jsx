@@ -112,6 +112,10 @@ export default function ReportForm() {
       setError('A verification question is required for found reports.');
       return;
     }
+    if (isFound && !form.hidden_answer.trim()) {
+      setError('The expected answer is required too -- without it, nobody could ever pass verification.');
+      return;
+    }
     if (isFound && !form.collection_point.trim()) {
       setError('Tell us where admin will be holding this item so the owner knows where to collect it.');
       return;
@@ -323,10 +327,12 @@ export default function ReportForm() {
               />
             </label>
             <label className="field">
-              <span>Expected answer (optional, kept private)</span>
+              <span>Expected answer *</span>
               <input
+                required
                 value={form.hidden_answer}
                 onChange={(e) => update('hidden_answer', e.target.value)}
+                placeholder="Kept private -- never shown to claimants"
               />
             </label>
             <label className="field">

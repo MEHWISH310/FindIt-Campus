@@ -81,6 +81,13 @@ async def create_report(
             "(see abstract section on asymmetric verification)",
         )
 
+    if payload.report_type == ReportType.FOUND.value and not payload.hidden_answer:
+        raise HTTPException(
+            400,
+            "Found reports need a hidden_answer too -- a question with no "
+            "correct answer means nobody could ever pass verify_claim.",
+        )
+
     report = Report(
         reporter_id=user.id,
         report_type=payload.report_type,

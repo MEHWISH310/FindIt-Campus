@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
  * (e.g. inside a flex row like thread-row, where an inline element would
  * otherwise get squeezed into that row's layout).
  */
-export default function Modal({ onClose, children, labelledBy }) {
+export default function Modal({ onClose, children, labelledBy, className = '' }) {
   useEffect(() => {
     function handleKeyDown(e) {
       if (e.key === 'Escape') onClose();
@@ -24,7 +24,7 @@ export default function Modal({ onClose, children, labelledBy }) {
   return createPortal(
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-panel"
+        className={`modal-panel ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}

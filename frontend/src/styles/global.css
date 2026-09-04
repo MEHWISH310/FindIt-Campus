@@ -1472,27 +1472,57 @@ button {
   box-shadow: var(--shadow-md);
 }
 
-.notice-thumb {
-  margin: -18px -18px 12px;
-  height: 140px;
+.notice-photo-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notice-photo-view-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Wider, padding-free variant of .modal-panel for the photo lightbox --
+   the default 420px/22px-padding sizing is meant for short text
+   confirm dialogs, not an image. */
+.modal-panel--photo {
+  max-width: 640px;
+  padding: 0;
   overflow: hidden;
-  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.photo-viewer {
+  position: relative;
   background: var(--surface-hover);
 }
 
-.notice-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.photo-viewer img {
   display: block;
+  width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
 }
 
-.notice-card--compact .notice-thumb {
-  height: 96px;
-}
-
-.notice-thumb {
-  position: relative;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .notice-thumb-redacted-badge {
@@ -2098,25 +2128,6 @@ button {
   background: var(--surface-hover);
   color: var(--text-muted);
   border: 1px dashed var(--border);
-}
-
-.status-pill {
-  font-weight: 600;
-  font-size: 0.72rem;
-  padding: 4px 10px;
-  border-radius: 999px;
-  white-space: nowrap;
-  display: inline-block;
-}
-
-.status-pill--pending {
-  background: var(--warn-soft);
-  color: var(--warn);
-}
-
-.status-pill--completed {
-  background: var(--found-soft);
-  color: var(--found);
 }
 
 .signals {
