@@ -188,6 +188,20 @@ class CheckAnswerResponse(BaseModel):
     correct: bool
 
 
+class MyClaimOut(BaseModel):
+    """One row in the logged-in user's own 'Things I claimed' list --
+    merges VERIFIED-but-not-yet-handed-over matches (status='pending')
+    with actual completed handovers (status='completed') into a single
+    timeline, since from the claimant's point of view both are 'things
+    I claimed', just at different stages. See custody.py's
+    list_my_claims."""
+    id: str
+    item_name: str
+    status: str  # "pending" | "completed"
+    handover_datetime: Optional[datetime] = None
+    collection_point: Optional[str] = None
+
+
 class ClaimResponse(BaseModel):
     verified: bool
     message: str

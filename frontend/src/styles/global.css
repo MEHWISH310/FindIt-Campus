@@ -2100,6 +2100,25 @@ button {
   border: 1px dashed var(--border);
 }
 
+.status-pill {
+  font-weight: 600;
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.status-pill--pending {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.status-pill--completed {
+  background: var(--found-soft);
+  color: var(--found);
+}
+
 .signals {
   font-size: 0.62rem;
   color: var(--text-muted);
@@ -2468,36 +2487,6 @@ button {
 
 .custody-table tbody tr:hover {
   background: var(--surface-hover);
-}
-
-/* ---- Ready-for-pickup table: pages/Admin.jsx ----
-   Same row layout as the custody table, but the finder/owner columns
-   stack name + email + phone. The custody-table's blanket
-   white-space: nowrap made those rows far wider than the viewport, so
-   here cells wrap instead and the table fits without a horizontal
-   scroll. */
-
-.pickup-table th,
-.pickup-table td {
-  white-space: normal;
-  vertical-align: top;
-}
-
-/* Only the contact cells need to break inside a long token (email /
-   phone with no spaces); everywhere else normal word wrapping is fine. */
-.pickup-table .pickup-person {
-  overflow-wrap: anywhere;
-}
-
-/* Shrink-to-fit the action column so the button never gets clipped at
-   the table's edge; the button itself stays on one line. */
-.pickup-table td:last-child,
-.pickup-table th:last-child {
-  width: 1%;
-}
-
-.pickup-table .submit-btn {
-  white-space: nowrap;
 }
 
 /* ---- Socket.IO live notifications ---- */

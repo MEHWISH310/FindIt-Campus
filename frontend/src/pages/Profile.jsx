@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   listReports,
-  listMyCustodyRecords,
+  listMyClaims,
   getStoredToken,
   updateMe,
   ApiError,
@@ -53,7 +53,7 @@ export default function Profile() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([listReports(), listMyCustodyRecords()])
+    Promise.all([listReports(), listMyClaims()])
       .then(([reportData, claimedData]) => {
         setReports(reportData ?? []);
         setClaimed(claimedData ?? []);
@@ -191,17 +191,23 @@ export default function Profile() {
                     <tr>
                       <th>Item</th>
                       <th>Handed over</th>
-                      <th>Contact given</th>
-                      <th>Notes</th>
+                      <th>Status</th>
+                      <th>Place of pickup</th>
                     </tr>
                   </thead>
                   <tbody>
                     {claimed.map((r) => (
                       <tr key={r.id}>
                         <td>{r.item_name}</td>
-                        <td className="mono">{formatDateTime(r.handover_datetime)}</td>
-                        <td>{r.claimant_contact || '-'}</td>
-                        <td>{r.notes || '-'}</td>
+                        <td className="mono">
+                          {r.status === 'pending' ? '-' : formatDateTime(r.handover_datetime)}
+                        </td>
+                        <td>
+                          <span className={`status-pill status-pill--${r.status}`}>
+                            {r.status === 'pending' ? 'Pickup pending' : 'Pickup completed'}
+                          </span>
+                        </td>
+                        <td>{r.collection_point || '-'}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -184,6 +184,15 @@ export function listMyCustodyRecords() {
   return request('/custody/mine');
 }
 
+/** GET /custody/mine/claims : everything the logged-in user has claimed,
+ * pending (verified, not yet handed over) and completed (already handed
+ * over) merged into one list -- powers the "Things I claimed" section on
+ * the profile page. Each row: { id, item_name, status: 'pending'|
+ * 'completed', handover_datetime, collection_point }. */
+export function listMyClaims() {
+  return request('/custody/mine/claims');
+}
+
 /**
  * POST /matches/{match_id}/disambiguate : forced-choice resolution when
  * multiple candidates were too close to auto-rank (status
