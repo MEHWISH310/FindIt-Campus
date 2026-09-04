@@ -67,7 +67,7 @@ export default function App() {
               <Route
                 path="/claimed"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute adminOnly>
                     <ClaimedItems />
                   </ProtectedRoute>
                 }

@@ -20,10 +20,10 @@ export default function Header() {
     Promise.all([
       listReports('lost'),
       listReports('found'),
-      listCustodyRecords(),
-      // Only admins can call this (backend 403s everyone else) -- and
-      // there's no point showing a pickups badge to non-admins anyway,
-      // since they can't see the Pickups nav item at all.
+      // Claimed and Pickups are both admin-only nav items now -- no point
+      // fetching either count for a non-admin, since they'll never see
+      // the badge (or the tab itself) anyway.
+      user?.is_admin ? listCustodyRecords() : Promise.resolve(null),
       user?.is_admin ? listPendingPickups() : Promise.resolve(null),
     ])
       .then(([lost, found, claimed, pickups]) => {
@@ -79,10 +79,12 @@ export default function Header() {
             Found
             {counts.found !== null && <span className="nav-count">{counts.found}</span>}
           </NavLink>
-          <NavLink to="/claimed" className={({ isActive }) => (isActive ? 'active' : '')}>
-            Claimed
-            {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
-          </NavLink>
+          {user.is_admin && (
+            <NavLink to="/claimed" className={({ isActive }) => (isActive ? 'active' : '')}>
+              Claimed
+              {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
+            </NavLink>
+          )}
           {user.is_admin && (
             <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
               Pickups
