@@ -73,7 +73,10 @@ export default function Login() {
         </button>
 
         <p className="verification-note">
-          Forgot your password? <Link to="/forgot-password">Reset it</Link>
+          Forgot your password?{' '}
+          <Link to="/forgot-password" className="auth-link-accent">
+            Reset it
+          </Link>
         </p>
       </form>
     </div>

@@ -13,6 +13,15 @@ function notifyReportsChanged() {
   window.dispatchEvent(new Event(REPORTS_CHANGED_EVENT));
 }
 
+// Same idea for one-off, locally-triggered toasts (e.g. "handover
+// confirmed"): NotificationToast listens for this and drops the message
+// into the same toast stack the live socket events use, so success
+// feedback for an action you just took looks identical to a push.
+export const TOAST_EVENT = 'findit:toast';
+export function showToast(message) {
+  window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { message } }));
+}
+
 class ApiError extends Error {
   constructor(message, status, body) {
     super(message);

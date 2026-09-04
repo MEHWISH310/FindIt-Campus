@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { listPendingPickups, confirmHandover, ApiError } from '../api/client';
+import { listPendingPickups, confirmHandover, showToast, ApiError } from '../api/client';
 
 function formatDate(dateString) {
   if (!dateString) return '—';
@@ -51,7 +51,6 @@ export default function Admin() {
   const [pickups, setPickups] = useState(null);
   const [error, setError] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
-  const [justConfirmed, setJustConfirmed] = useState(null);
 
   const reload = useCallback(() => {
     listPendingPickups()
@@ -68,8 +67,8 @@ export default function Admin() {
     setError(null);
     try {
       await confirmHandover(matchId);
-      setJustConfirmed(matchId);
       setPickups((current) => current.filter((p) => p.match_id !== matchId));
+      showToast('Handover confirmed — the finder has been emailed.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not confirm handover.');
     } finally {
@@ -87,10 +86,10 @@ export default function Admin() {
       </div>
 
       <p className="dashboard-status" style={{ marginTop: 0 }}>
-        Everyone below has already answered their verification question correctly online.
-        Check their name against the report's unique id when they arrive, hand over the
-        item, then click "Mark handed over" -- that's what actually resolves the reports
-        and emails the finder.
+        Everyone here has already passed their verification question online. When they
+        come to collect, match their name to the Report ID, hand the item over, then
+        click "Mark handed over", that closes both reports and emails the finder to
+        confirm the item's been returned.
       </p>
 
       {error && <p className="dashboard-status dashboard-status--error">{error}</p>}
@@ -101,7 +100,7 @@ export default function Admin() {
 
       {pickups && pickups.length > 0 && (
         <div className="custody-table-wrap">
-          <table className="custody-table">
+          <table className="custody-table pickup-table">
             <thead>
               <tr>
                 <th>Report ID</th>
@@ -122,8 +121,8 @@ export default function Admin() {
                     {p.category ? ` (${p.category})` : ''}
                   </td>
                   <td>{p.collection_point || '—'}</td>
-                  <td>{renderPerson(p.finder)}</td>
-                  <td>{renderPerson(p.owner)}</td>
+                  <td className="pickup-person">{renderPerson(p.finder)}</td>
+                  <td className="pickup-person">{renderPerson(p.owner)}</td>
                   <td className="mono">{formatDate(p.verified_at)}</td>
                   <td>
                     <button
@@ -140,12 +139,6 @@ export default function Admin() {
             </tbody>
           </table>
         </div>
-      )}
-
-      {justConfirmed && (
-        <p className="dashboard-status" style={{ marginTop: 16 }}>
-          Handover confirmed — the finder has been emailed.
-        </p>
       )}
     </div>
   );

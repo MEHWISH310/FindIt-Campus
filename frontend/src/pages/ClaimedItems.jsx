@@ -28,7 +28,7 @@ export default function ClaimedItems() {
   }, []);
 
   return (
-    <div className="page-shell claimed-items">
+    <div className="page-shell dashboard claimed-items">
       <div className="dashboard-head">
         <h1 className="dashboard-title">
           Claimed items
