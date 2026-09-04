@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { socket } from '../api/socket';
-import { REPORTS_CHANGED_EVENT } from '../api/client';
+import { REPORTS_CHANGED_EVENT, TOAST_EVENT } from '../api/client';
 
 // One entry per backend event (see backend/app/realtime.py's docstring for
 // the full list) -- `render` turns the event payload into a human message.
@@ -38,28 +38,37 @@ export default function NotificationToast() {
   const [toasts, setToasts] = useState([]);
 
   useEffect(() => {
+    function pushToast(message) {
+      const id = ++idCounter;
+      setToasts((current) => [...current, { id, message }]);
+      setTimeout(() => {
+        setToasts((current) => current.filter((t) => t.id !== id));
+      }, TOAST_LIFETIME_MS);
+    }
+
     const bound = EVENT_RENDERERS.map(({ name, render }) => {
       const handler = (data) => {
-        const id = ++idCounter;
         let message;
         try {
           message = render(data);
         } catch {
           message = 'Update received';
         }
-        setToasts((current) => [...current, { id, message }]);
-        setTimeout(() => {
-          setToasts((current) => current.filter((t) => t.id !== id));
-        }, TOAST_LIFETIME_MS);
-
+        pushToast(message);
         window.dispatchEvent(new Event(REPORTS_CHANGED_EVENT));
       };
       socket.on(name, handler);
       return { name, handler };
     });
 
+    // Locally-triggered toasts (client.js's showToast) -- e.g. the admin
+    // confirming a handover -- land in the same stack.
+    const onLocalToast = (e) => pushToast(e.detail?.message ?? 'Done');
+    window.addEventListener(TOAST_EVENT, onLocalToast);
+
     return () => {
       bound.forEach(({ name, handler }) => socket.off(name, handler));
+      window.removeEventListener(TOAST_EVENT, onLocalToast);
     };
   }, []);
 

@@ -30,12 +30,12 @@ from app.models.report import (
     ESCALATION_DAYS_THRESHOLD,
 )
 from app.models.match import Match
-from app.routers.schemas import ReportCreate, ReportOut
+from app.routers.schemas import ReportCreate, ReportOut, ReporterInfoOut
 from app.matching.embeddings import encode_text, encode_images
 from app.matching.redaction import redact_photo, originals_dir
 from app.realtime import sio
 from app.models.user import User
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -44,6 +44,25 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic"}
 MAX_PHOTOS_PER_REPORT = 5
 MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB per photo
+
+
+def _serialize_report(report: Report, viewer: User | None, db: Session) -> ReportOut:
+    """Builds the ReportOut for one report, attaching `reporter` (name/
+    email/phone) only when the viewer is an admin. Everyone else gets it
+    as null -- reporter_id (just a UUID) stays visible to everyone so the
+    frontend can still tell "is this my report", but actual identity is
+    admin-only. See ReporterInfoOut's docstring in schemas.py."""
+    out = ReportOut.model_validate(report)
+    if viewer is not None and viewer.is_admin == "true" and report.reporter_id:
+        reporter_user = db.query(User).filter(User.id == report.reporter_id).first()
+        if reporter_user:
+            out.reporter = ReporterInfoOut(
+                id=reporter_user.id,
+                name=reporter_user.name,
+                email=reporter_user.email,
+                phone=reporter_user.phone,
+            )
+    return out
 
 
 @router.post("/", response_model=ReportOut)
@@ -62,6 +81,13 @@ async def create_report(
             "(see abstract section on asymmetric verification)",
         )
 
+    if payload.report_type == ReportType.FOUND.value and not payload.hidden_answer:
+        raise HTTPException(
+            400,
+            "Found reports need a hidden_answer too -- a question with no "
+            "correct answer means nobody could ever pass verify_claim.",
+        )
+
     report = Report(
         reporter_id=user.id,
         report_type=payload.report_type,
@@ -76,6 +102,7 @@ async def create_report(
         item_datetime=payload.item_datetime,
         hidden_question=payload.hidden_question,
         hidden_answer=payload.hidden_answer,
+        collection_point=payload.collection_point,
         # Auto-detected, not client-supplied -- a reporter shouldn't be able
         # to mark their own item high-risk (or dodge the flag). Matched
         # case-insensitively since category is free text, not a fixed enum.
@@ -103,11 +130,15 @@ async def create_report(
         },
     )
 
-    return report
+    return _serialize_report(report, user, db)
 
 
 @router.get("/", response_model=List[ReportOut])
-def list_reports(report_type: str | None = None, db: Session = Depends(get_db)):
+def list_reports(
+    report_type: str | None = None,
+    db: Session = Depends(get_db),
+    viewer: User | None = Depends(get_current_user_optional),
+):
     query = db.query(Report)
     if report_type:
         query = query.filter(Report.report_type == report_type)
@@ -128,15 +159,20 @@ def list_reports(report_type: str | None = None, db: Session = Depends(get_db)):
         else_=0,
     )
 
-    return query.order_by(stale_rank.asc(), Report.created_at.desc()).all()
+    reports = query.order_by(stale_rank.asc(), Report.created_at.desc()).all()
+    return [_serialize_report(r, viewer, db) for r in reports]
 
 
 @router.get("/{report_id}", response_model=ReportOut)
-def get_report(report_id: str, db: Session = Depends(get_db)):
+def get_report(
+    report_id: str,
+    db: Session = Depends(get_db),
+    viewer: User | None = Depends(get_current_user_optional),
+):
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:
         raise HTTPException(404, "Report not found")
-    return report
+    return _serialize_report(report, viewer, db)
 
 
 @router.delete("/{report_id}")

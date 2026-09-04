@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
 import ThemeToggle from './ThemeToggle';
 import Modal from './Modal';
-import { listReports, REPORTS_CHANGED_EVENT } from '../api/client';
+import { listReports, listCustodyRecords, listPendingPickups, REPORTS_CHANGED_EVENT } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 // Auth screens (login, first-time signup, and the set-a-new-password
@@ -11,25 +11,35 @@ import { useAuth } from '../context/AuthContext';
 const HEADERLESS_ROUTES = ['/login', '/request-access', '/forgot-password', '/set-password'];
 
 export default function Header() {
-  const [counts, setCounts] = useState({ lost: null, found: null });
+  const [counts, setCounts] = useState({ lost: null, found: null, claimed: null, pickups: null });
   const [logoutOpen, setLogoutOpen] = useState(false);
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
 
   const refreshCounts = useCallback(() => {
-    Promise.all([listReports('lost'), listReports('found')])
-      .then(([lost, found]) => {
-        // Only count reports still actually open -- a claimed/resolved
-        // report shouldn't keep padding the nav badge. This is what makes
-        // the count drop back down after a successful claim (see
-        // client.js's claimMatch, which fires REPORTS_CHANGED_EVENT).
-        const openCount = (list) => (list ?? []).filter((r) => r.status === 'open').length;
-        setCounts({ lost: openCount(lost), found: openCount(found) });
+    Promise.all([
+      listReports('lost'),
+      listReports('found'),
+      // Claimed and Pickups are both admin-only nav items now -- no point
+      // fetching either count for a non-admin, since they'll never see
+      // the badge (or the tab itself) anyway.
+      user?.is_admin ? listCustodyRecords() : Promise.resolve(null),
+      user?.is_admin ? listPendingPickups() : Promise.resolve(null),
+    ])
+      .then(([lost, found, claimed, pickups]) => {
+        // Total count of every report of that type -- resolved/claimed
+        // reports still count, they just aren't excluded here anymore.
+        setCounts({
+          lost: (lost ?? []).length,
+          found: (found ?? []).length,
+          claimed: (claimed ?? []).length,
+          pickups: pickups ? pickups.length : null,
+        });
       })
       .catch(() => {
-        setCounts({ lost: 0, found: 0 });
+        setCounts({ lost: 0, found: 0, claimed: 0, pickups: null });
       });
-  }, []);
+  }, [user?.is_admin]);
 
   useEffect(() => {
     refreshCounts();
@@ -38,6 +48,13 @@ export default function Header() {
     window.addEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
     return () => window.removeEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
   }, [refreshCounts]);
+
+  // Header stays mounted across logout (it just renders null), so the
+  // confirm dialog's open state would otherwise survive and pop up again
+  // on the next login. Clear it whenever the session ends, for any reason.
+  useEffect(() => {
+    if (!user) setLogoutOpen(false);
+  }, [user]);
 
   // Header only shows once logged in, and never on the auth screens.
   if (!user || HEADERLESS_ROUTES.includes(pathname)) {
@@ -62,9 +79,18 @@ export default function Header() {
             Found
             {counts.found !== null && <span className="nav-count">{counts.found}</span>}
           </NavLink>
-          <NavLink to="/claimed" className={({ isActive }) => (isActive ? 'active' : '')}>
-            Claimed
-          </NavLink>
+          {user.is_admin && (
+            <NavLink to="/claimed" className={({ isActive }) => (isActive ? 'active' : '')}>
+              Claimed
+              {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
+            </NavLink>
+          )}
+          {user.is_admin && (
+            <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
+              Pickups
+              {counts.pickups !== null && <span className="nav-count">{counts.pickups}</span>}
+            </NavLink>
+          )}
         </nav>
 
         <div className="site-actions">

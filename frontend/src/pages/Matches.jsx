@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getReport, getMatch, findMatches, claimMatch, disambiguateMatch, ApiError } from '../api/client';
+import { getReport, getMatch, findMatches, claimMatch, checkClaimAnswer, disambiguateMatch, ApiError } from '../api/client';
 import NoticeCard from '../components/NoticeCard';
 import Modal from '../components/Modal';
+import { useAuth } from '../context/AuthContext';
 
 function isNeedsReview(match) {
   return match.status === 'NEEDS_DISAMBIGUATION' || match.status === 'needs_disambiguation';
@@ -12,20 +13,63 @@ function isRejected(match) {
   return match.status === 'REJECTED' || match.status === 'rejected';
 }
 
+function isVerified(match) {
+  return match.status === 'VERIFIED' || match.status === 'verified';
+}
+
+// Small red-asterisk marker for required-field labels.
+function Required() {
+  return <span style={{ color: '#ef4444' }}> *</span>;
+}
+
 /**
  * Claim/verification popup. Only ever shown for a FOUND counterpart report
  * -- the claimant is proving the item is theirs by answering the finder's
  * hidden_question (asymmetric verification, per the abstract). Opened via
  * NoticeCard's primaryAction button rather than expanding inline, so it
  * doesn't get squeezed into thread-row's flex layout as its own column.
+ *
+ * Two steps:
+ *   1. "answer" -- just the verification question. Checked via
+ *      POST /matches/{id}/check-answer (no state change either way), so a
+ *      wrong guess doesn't cost them filling in their name/reg number/etc
+ *      first for nothing.
+ *   2. "details" -- shown only once step 1 comes back correct. Collects
+ *      name/registration number/phone and submits everything (answer
+ *      included) to POST /matches/{id}/verify, which is what actually
+ *      records the claim -- it re-checks the answer itself too, so step 1
+ *      is a UX nicety, not the real security boundary.
  */
 function ClaimModal({ match, foundReport, onClaimed, onClose }) {
+  const { user } = useAuth();
+  const [step, setStep] = useState('answer'); // 'answer' | 'details'
   const [claimantName, setClaimantName] = useState('');
+  const [registrationNumber, setRegistrationNumber] = useState('');
   const [claimantContact, setClaimantContact] = useState('');
   const [hiddenAnswer, setHiddenAnswer] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [answerError, setAnswerError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { verified, message } | null
   const [error, setError] = useState(null);
+
+  async function handleCheckAnswer(e) {
+    e.preventDefault();
+    setChecking(true);
+    setAnswerError(null);
+    try {
+      const res = await checkClaimAnswer(match.id, hiddenAnswer);
+      if (res.correct) {
+        setStep('details');
+      } else {
+        setAnswerError('Wrong answer. You can try again.');
+      }
+    } catch (err) {
+      setAnswerError(err instanceof ApiError ? err.message : 'Could not check the answer.');
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -35,12 +79,21 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
     try {
       const res = await claimMatch(match.id, {
         claimant_name: claimantName.trim(),
+        claimant_registration_number: registrationNumber.trim().toUpperCase(),
+        claimant_email: user?.email ?? '',
         claimant_contact: claimantContact.trim() || null,
         hidden_answer: hiddenAnswer,
       });
       setResult(res);
       if (res.verified) {
         onClaimed?.();
+      } else {
+        // The answer was re-checked server-side and somehow came back
+        // wrong this time (e.g. the question changed underneath them) --
+        // send them back to step 1 rather than stranding them on a details
+        // form for an answer that no longer works.
+        setStep('answer');
+        setAnswerError(res.message || 'That answer no longer matches. Please try again.');
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not submit the claim.');
@@ -62,38 +115,71 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
             Close
           </button>
         </div>
-      ) : (
-        <form className="claim-form" onSubmit={handleSubmit}>
+      ) : step === 'answer' ? (
+        <form className="claim-form" onSubmit={handleCheckAnswer}>
           <p className="claim-form-question">
             <strong>Verification question:</strong> {foundReport.hidden_question || 'No question set for this report.'}
           </p>
 
           <label>
-            Your name
-            <input
-              type="text"
-              value={claimantName}
-              onChange={(e) => setClaimantName(e.target.value)}
-              required
-            />
-          </label>
-
-          <label>
-            Contact (phone/email, optional)
-            <input
-              type="text"
-              value={claimantContact}
-              onChange={(e) => setClaimantContact(e.target.value)}
-            />
-          </label>
-
-          <label>
-            Your answer
+            <span>Your answer<Required /></span>
             <input
               type="text"
               value={hiddenAnswer}
               onChange={(e) => setHiddenAnswer(e.target.value)}
               required
+              autoFocus
+            />
+          </label>
+
+          {answerError && <p className="claim-form-error">{answerError}</p>}
+
+          <div className="claim-form-actions">
+            <button type="submit" disabled={checking}>
+              {checking ? 'Checking…' : 'Check answer'}
+            </button>
+            <button type="button" className="claim-form-cancel" onClick={onClose} disabled={checking}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <form className="claim-form" onSubmit={handleSubmit}>
+          <p className="claim-form-question">Answer verified -- now fill in your details to complete the claim.</p>
+
+          <label>
+            <span>Your name<Required /></span>
+            <input
+              type="text"
+              value={claimantName}
+              onChange={(e) => setClaimantName(e.target.value)}
+              required
+              autoFocus
+            />
+          </label>
+
+          <label>
+            <span>Registration number<Required /></span>
+            <input
+              type="text"
+              value={registrationNumber}
+              onChange={(e) => setRegistrationNumber(e.target.value)}
+              placeholder="23BCE0000"
+              required
+            />
+          </label>
+
+          <label>
+            <span>Email<Required /></span>
+            <input type="email" value={user?.email ?? ''} readOnly disabled />
+          </label>
+
+          <label>
+            Phone number (optional)
+            <input
+              type="text"
+              value={claimantContact}
+              onChange={(e) => setClaimantContact(e.target.value)}
             />
           </label>
 
@@ -104,10 +190,15 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
 
           <div className="claim-form-actions">
             <button type="submit" disabled={submitting}>
-              {submitting ? 'Checking…' : 'Submit answer'}
+              {submitting ? 'Submitting…' : 'Submit claim'}
             </button>
-            <button type="button" className="claim-form-cancel" onClick={onClose} disabled={submitting}>
-              Cancel
+            <button
+              type="button"
+              className="claim-form-cancel"
+              onClick={() => setStep('answer')}
+              disabled={submitting}
+            >
+              Back
             </button>
           </div>
         </form>
@@ -181,7 +272,7 @@ function DisambiguationPrompt({ matches, sourceId, onResolved }) {
   return (
     <div className="disambig-prompt">
       <p className="disambig-heading">
-        A few candidates scored too close to auto-rank — which one is actually yours?
+        A few candidates scored too close to auto-rank. Which one is actually yours?
       </p>
       <div className="disambig-grid">
         {matches.map((m) => (
@@ -192,7 +283,7 @@ function DisambiguationPrompt({ matches, sourceId, onResolved }) {
   );
 }
 
-function ThreadRow({ match, sourceId, index, onClaimed }) {
+function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
   const [counterpart, setCounterpart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [claimOpen, setClaimOpen] = useState(false);
@@ -201,6 +292,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
   const needsReview = isNeedsReview(match);
   const isConfirmed = match.status === 'CONFIRMED' || match.status === 'confirmed';
+  const verifiedPendingPickup = isVerified(match);
   const hasProbability = match.match_probability != null;
   const pct = hasProbability
     ? Math.round(match.match_probability * 100)
@@ -241,8 +333,18 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
   }, [isConfirmed, match.id]);
 
   // Claiming only makes sense against a FOUND report that's still open --
-  // that's the side holding the hidden_question a claimant must answer.
-  const claimable = counterpart?.report_type === 'found' && counterpart?.status === 'open' && !isConfirmed;
+  // that's the side holding the hidden_question a claimant must answer --
+  // AND only for the person who actually filed the LOST report this
+  // matches page is for. The backend enforces this too (verify_claim
+  // 403s anyone else), but there's no reason to dangle a "Claim this
+  // item" button in front of someone who's just browsing another
+  // student's matches and let them hit that error.
+  const claimable =
+    counterpart?.report_type === 'found' &&
+    counterpart?.status === 'open' &&
+    !isConfirmed &&
+    !verifiedPendingPickup &&
+    isSourceOwner;
 
   return (
     <div
@@ -260,9 +362,15 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
               primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
             />
             {isConfirmed && <p className="claim-form-success-note">Already claimed and confirmed.</p>}
+            {verifiedPendingPickup && (
+              <p className="claim-form-success-note">
+                Verified! Go collect this item from admin
+                {counterpart?.collection_point ? ` at ${counterpart.collection_point}` : ''}.
+              </p>
+            )}
             {isConfirmed && gatedInfo?.found_contact && (
               <div className="claim-form-success-note">
-                <strong>Finder's contact:</strong> {gatedInfo.found_contact.name || 'N/A'} —{' '}
+                <strong>Finder's contact:</strong> {gatedInfo.found_contact.name || 'N/A'} ·{' '}
                 {gatedInfo.found_contact.email}
                 {gatedInfo.found_contact.phone ? ` · ${gatedInfo.found_contact.phone}` : ''}
               </div>
@@ -270,7 +378,7 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
             {isConfirmed && gatedInfo?.claimant_info && (
               <div className="claim-form-success-note">
                 <strong>Claimed by:</strong> {gatedInfo.claimant_info.claimant_name}
-                {gatedInfo.claimant_info.claimant_contact ? ` — ${gatedInfo.claimant_info.claimant_contact}` : ''}
+                {gatedInfo.claimant_info.claimant_contact ? ` · ${gatedInfo.claimant_info.claimant_contact}` : ''}
               </div>
             )}
           </>
@@ -289,9 +397,9 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
       <div className="thread-connector">
         <span
           className={`score-pill ${needsReview ? 'score-pill--warn' : ''} ${!hasProbability && pct != null ? 'score-pill--estimated' : ''} mono`}
-          title={!hasProbability && pct != null ? 'Estimated from raw score — not yet calibrated against confirmed matches' : undefined}
+          title={!hasProbability && pct != null ? 'Estimated from raw score, not yet calibrated against confirmed matches' : undefined}
         >
-          {needsReview ? 'Needs review' : pct != null ? `${pct}%` : '—'}
+          {needsReview ? 'Needs review' : pct != null ? `${pct}%` : '-'}
         </span>
         {match.used_signals?.length > 0 && (
           <span className="signals">{match.used_signals.join(', ')}</span>
@@ -303,9 +411,14 @@ function ThreadRow({ match, sourceId, index, onClaimed }) {
 
 export default function Matches() {
   const { reportId } = useParams();
+  const { user } = useAuth();
   const [sourceReport, setSourceReport] = useState(null);
   const [matches, setMatches] = useState(null);
   const [error, setError] = useState(null);
+
+  // Only the person who filed this lost report should see a "Claim this
+  // item" button on its matches page -- everyone else is just browsing.
+  const isSourceOwner = !!(user && sourceReport && sourceReport.reporter_id === user.id);
 
   // Deliberately only re-fetches sourceReport, NOT findMatches again --
   // findMatches() re-runs the whole matching pipeline and writes fresh
@@ -376,7 +489,7 @@ export default function Matches() {
 
       {matches && matches.length === 0 && (
         <p className="matches-status">
-          No candidate matches yet — check back once more reports come in.
+          No candidate matches yet. Check back once more reports come in.
         </p>
       )}
 
@@ -395,7 +508,14 @@ export default function Matches() {
             {normalMatches.length > 0 && (
               <div className="thread-list">
                 {normalMatches.map((m, i) => (
-                  <ThreadRow key={m.id} match={m} sourceId={reportId} index={i} onClaimed={refreshSourceReport} />
+                  <ThreadRow
+                    key={m.id}
+                    match={m}
+                    sourceId={reportId}
+                    index={i}
+                    onClaimed={refreshSourceReport}
+                    isSourceOwner={isSourceOwner}
+                  />
                 ))}
               </div>
             )}

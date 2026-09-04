@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   listReports,
-  listMyCustodyRecords,
+  listMyClaims,
   getStoredToken,
   updateMe,
   ApiError,
@@ -13,7 +13,7 @@ import ChangePasswordForm from '../components/ChangePasswordForm';
 import Modal from '../components/Modal';
 
 function formatDateTime(value) {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -53,7 +53,7 @@ export default function Profile() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([listReports(), listMyCustodyRecords()])
+    Promise.all([listReports(), listMyClaims()])
       .then(([reportData, claimedData]) => {
         setReports(reportData ?? []);
         setClaimed(claimedData ?? []);
@@ -94,6 +94,11 @@ export default function Profile() {
   const mine = reports.filter((r) => user && r.reporter_id === user.id);
   const myLost = mine.filter((r) => r.report_type === 'lost');
   const myFound = mine.filter((r) => r.report_type === 'found');
+
+  // When neither list has more than one card there's a lot of empty space
+  // to the right of a single card, so sit the two sections side by side.
+  // As soon as either list holds 2+ cards they go back to stacked full-width.
+  const compactReports = myLost.length <= 1 && myFound.length <= 1;
 
   function handleDeleted(id) {
     setReports((prev) => prev.filter((r) => r.id !== id));
@@ -154,21 +159,23 @@ export default function Profile() {
 
       {!loading && !error && (
         <>
-          <section className="profile-section">
-            <h2 className="profile-section-title profile-section-title--lost">
-              Things I reported as lost
-              <span className="dashboard-count">{myLost.length}</span>
-            </h2>
-            {renderGrid(myLost, "You haven't reported anything lost yet.")}
-          </section>
+          <div className={`profile-reports${compactReports ? ' profile-reports--split' : ''}`}>
+            <section className="profile-section">
+              <h2 className="profile-section-title profile-section-title--lost">
+                Things I reported as lost
+                <span className="dashboard-count">{myLost.length}</span>
+              </h2>
+              {renderGrid(myLost, "You haven't reported anything lost yet.")}
+            </section>
 
-          <section className="profile-section">
-            <h2 className="profile-section-title profile-section-title--found">
-              Things I found
-              <span className="dashboard-count">{myFound.length}</span>
-            </h2>
-            {renderGrid(myFound, "You haven't reported anything found yet.")}
-          </section>
+            <section className="profile-section">
+              <h2 className="profile-section-title profile-section-title--found">
+                Things I found
+                <span className="dashboard-count">{myFound.length}</span>
+              </h2>
+              {renderGrid(myFound, "You haven't reported anything found yet.")}
+            </section>
+          </div>
 
           <section className="profile-section">
             <h2 className="profile-section-title">
@@ -184,17 +191,23 @@ export default function Profile() {
                     <tr>
                       <th>Item</th>
                       <th>Handed over</th>
-                      <th>Contact given</th>
-                      <th>Notes</th>
+                      <th>Status</th>
+                      <th>Place of pickup</th>
                     </tr>
                   </thead>
                   <tbody>
                     {claimed.map((r) => (
                       <tr key={r.id}>
                         <td>{r.item_name}</td>
-                        <td className="mono">{formatDateTime(r.handover_datetime)}</td>
-                        <td>{r.claimant_contact || '—'}</td>
-                        <td>{r.notes || '—'}</td>
+                        <td className="mono">
+                          {r.status === 'pending' ? '-' : formatDateTime(r.handover_datetime)}
+                        </td>
+                        <td>
+                          <span className={`status-pill status-pill--${r.status}`}>
+                            {r.status === 'pending' ? 'Pickup pending' : 'Pickup completed'}
+                          </span>
+                        </td>
+                        <td>{r.collection_point || '-'}</td>
                       </tr>
                     ))}
                   </tbody>

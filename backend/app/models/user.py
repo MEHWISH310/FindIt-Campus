@@ -26,14 +26,18 @@ from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.session import Base
 
-# Only this college's email domain is accepted, everywhere a User is
+# Only these college email domains are accepted, everywhere a User is
 # created -- seed_users.py, /auth/request-access, and any future admin
-# "add user" endpoint.
-ALLOWED_EMAIL_DOMAIN = "vitstudent.ac.in"
+# "add user" endpoint. Kept as a tuple (not a single string) so adding
+# another campus domain later is just adding an entry here.
+ALLOWED_EMAIL_DOMAINS = ("vitstudent.ac.in", "vit.ac.in")
 
 
 def is_college_email(email: str) -> bool:
-    return bool(email) and email.strip().lower().endswith(f"@{ALLOWED_EMAIL_DOMAIN}")
+    if not email:
+        return False
+    email = email.strip().lower()
+    return any(email.endswith(f"@{domain}") for domain in ALLOWED_EMAIL_DOMAINS)
 
 
 class User(Base):
@@ -51,5 +55,13 @@ class User(Base):
     # "true"/"false" string, same pattern as Report.is_high_risk elsewhere
     # in this codebase -- forces a "set new password" screen on first login.
     must_set_password = Column(String(5), default="true")
+
+    # "true"/"false" string, same pattern as must_set_password/is_high_risk.
+    # Admin accounts are seeded directly (see seed_admins.py) with a real
+    # email/password rather than going through /auth/request-access, since
+    # they don't have to be @vitstudent.ac.in addresses. Admins can see who
+    # filed a report (reporter identity) and confirm physical handovers --
+    # regular users never see who filed a report they're not party to.
+    is_admin = Column(String(5), default="false")
 
     created_at = Column(DateTime, default=datetime.utcnow)

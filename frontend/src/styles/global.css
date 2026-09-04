@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
 
 /* ==========================================================================
-   FindIt Campus — global stylesheet
-   Direction: a calm "control room" for a matching engine — flat, muted
+   FindIt Campus global stylesheet
+   Direction: a calm "control room" for a matching engine. Flat, muted
    cards (status carried by the tag chip, not a loud side stripe), a clean
    connector line (not an illustration) tying a match's two cards together
    on the results page. Ships as a dark theme by default with a fully-tuned
@@ -24,7 +24,7 @@
    -------------------------------------------------------------------------- */
 
 :root {
-  /* Brand palette — fixed hex values, do not re-tune */
+  /* Brand palette: fixed hex values, do not re-tune */
   --brand-forest: #024336;
   --brand-cranberry: #b3306b;
   --brand-pink: #fd97d2;
@@ -178,6 +178,24 @@ button {
   padding: 0 24px;
 }
 
+/* Sticky-footer layout: the shell fills at least the viewport, the main
+   region grows to take up any slack, so a short page (e.g. Claimed items
+   with two rows) still drops the footer to the bottom edge. */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-main {
+  flex: 1 0 auto;
+}
+
+.app-shell .site-footer {
+  flex-shrink: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;
@@ -186,7 +204,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   2. Header / nav — components/Header.jsx, components/ThemeToggle.jsx
+   2. Header / nav: components/Header.jsx, components/ThemeToggle.jsx
    -------------------------------------------------------------------------- */
 
 .site-header {
@@ -414,7 +432,109 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   3. Landing page — pages/Landing.jsx
+   2b. Footer: components/Footer.jsx
+   -------------------------------------------------------------------------- */
+
+.site-footer {
+  margin-top: 32px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
+.site-footer-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 36px 24px 28px;
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  gap: 32px;
+}
+
+.site-footer-brand {
+  max-width: 280px;
+}
+
+.site-footer-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.site-footer-tagline {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.site-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.site-footer-heading {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.site-footer-col a {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition: color 0.15s var(--ease);
+}
+
+.site-footer-col a:hover {
+  color: var(--text);
+}
+
+.site-footer-bottom {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 18px 24px 28px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .site-footer {
+    margin-top: 24px;
+  }
+
+  .site-footer-inner {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px 24px;
+  }
+
+  .site-footer-brand {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .site-footer-inner {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3. Landing page: pages/Landing.jsx
    -------------------------------------------------------------------------- */
 
 .landing-hero-wrap {
@@ -432,7 +552,7 @@ button {
   padding: 148px 24px 96px;
 }
 
-/* Decorative shapes live in the wrap's outer margins only — never
+/* Decorative shapes live in the wrap's outer margins only, never
    positioned over the text column, however wide the viewport. Spread
    top-to-bottom so the section doesn't go bare below the CTAs. */
 .hero-shapes {
@@ -447,7 +567,7 @@ button {
   position: absolute;
 }
 
-/* left side — deliberately uneven rhythm, not a tidy column */
+/* left side: deliberately uneven rhythm, not a tidy column */
 .hero-shape--star {
   top: 50px;
   left: 18%;
@@ -475,7 +595,7 @@ button {
   animation-delay: -1.6s;
 }
 
-/* right side — offset from the left rhythm, not mirrored */
+/* right side: offset from the left rhythm, not mirrored */
 .hero-shape--dot-right {
   width: 21px;
   height: 21px;
@@ -541,7 +661,7 @@ button {
   gap: 14px;
   justify-content: center;
   flex-wrap: wrap;
-  margin-bottom: 110px;
+  margin-bottom: 48px;
 }
 
 .cta {
@@ -582,6 +702,40 @@ button {
   color: var(--on-found);
 }
 
+/* Downward chevron under the hero CTAs; scrolls to the "How it works"
+   section. Gentle bounce, disabled under prefers-reduced-motion by the
+   global rule. */
+.landing-scroll-cue {
+  margin: 4px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  animation: scroll-cue-bounce 2s var(--ease-soft) infinite;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.landing-scroll-cue:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+@keyframes scroll-cue-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+
 @media (max-width: 900px) {
   .landing-hero {
     padding-top: 96px;
@@ -617,9 +771,416 @@ button {
   }
 }
 
+/* Content sections below the hero. Each section is laid out differently on
+   purpose (a numbered timeline, alternating zig-zag rows, an asymmetric
+   bento) so the page doesn't read as one card grid repeated three times.
+   Loose decorative shapes (.lp-deco*) sit behind the content in each. */
+
+/* guards the gutter-bleed decorations from producing a horizontal scrollbar */
+.landing {
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+.lp-sec {
+  position: relative;
+  z-index: 1;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 104px 24px 0;
+}
+
+/* first section sits directly under the hero, so keep the gap tight */
+.lp-steps {
+  padding-top: 20px;
+}
+
+/* the hero's scroll-cue jumps here; offset the landing spot so the
+   sticky header doesn't cover the "How it works" label */
+#how-it-works-section {
+  scroll-margin-top: 80px;
+}
+
+.lp-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+
+.lp-h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.6rem, 3.6vw, 2.3rem);
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  margin: 0 0 34px;
+}
+
+/* -- decorative shapes -- pushed out into the empty side gutters, past the
+   980px content column, so the wide margins don't read as blank. .landing's
+   overflow-x:clip stops them adding a scrollbar. -- */
+.lp-deco {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+/* section 1: how it works */
+.lp-deco--b { color: var(--brand-gold); top: 150px; left: -58px; opacity: 0.42; animation: shape-float-b 8s ease-in-out infinite; }
+.lp-deco--k { color: var(--found); bottom: -10px; left: -76px; opacity: 0.4; }
+
+/* section 2: signals */
+.lp-deco--c { color: var(--found); top: 60px; left: -70px; animation: shape-float-b 8s ease-in-out infinite; }
+.lp-deco--d { color: var(--brand-gold); top: 230px; right: -66px; opacity: 0.42; }
+.lp-deco--e { color: var(--brand-pink); bottom: 70px; right: -52px; opacity: 0.4; animation: shape-float-a 6s ease-in-out infinite reverse; }
+.lp-deco--l { color: var(--accent); bottom: 20px; left: -82px; opacity: 0.32; }
+
+/* section 3: safe handover */
+.lp-deco--f { color: var(--lost); top: 46px; right: -68px; opacity: 0.44; animation: shape-float-b 7.5s ease-in-out infinite; }
+.lp-deco--g { color: var(--accent); bottom: 8px; left: -80px; opacity: 0.3; }
+.lp-deco--m { color: var(--brand-gold); top: 120px; left: -50px; opacity: 0.42; animation: shape-float-a 6.5s ease-in-out infinite; }
+
+/* section 4: closing */
+.lp-deco--h { color: var(--brand-gold); top: 44px; left: -40px; animation: shape-float-a 5.5s ease-in-out infinite; }
+.lp-deco--i { color: var(--brand-pink); bottom: 60px; right: -32px; animation: shape-float-b 6.5s ease-in-out infinite; }
+.lp-deco--j { color: var(--found); top: 42%; right: -60px; opacity: 0.35; }
+
+/* -- 1. How it works: numbered timeline -- */
+.lp-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+  position: relative;
+}
+
+/* connector line running behind the numbers */
+.lp-timeline::before {
+  content: '';
+  position: absolute;
+  top: 26px;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 6px, transparent 6px 12px);
+  z-index: 0;
+}
+
+.lp-tl-item {
+  position: relative;
+  z-index: 1;
+  padding-right: 8px;
+}
+
+.lp-tl-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin-bottom: 16px;
+}
+
+.lp-tl-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin: 0 0 8px;
+}
+
+.lp-tl-body {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* -- 2. What powers the match: one interactive card, the four bars pick
+   which signal is explained. Hover / click a bar, or press-drag across
+   the whole bar strip like a slider. -- */
+.lp-signal-hint {
+  margin: -22px 0 24px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.lp-signal-card {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 44px;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  padding: 32px;
+}
+
+.lp-signal-info {
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+}
+
+.lp-signal-tag {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.lp-signal-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.2rem;
+  margin: 6px 0 10px;
+}
+
+.lp-signal-body {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 42ch;
+}
+
+.lp-signal-dots {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.lp-signal-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: width 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.lp-signal-dot.is-active {
+  width: 22px;
+  background: var(--accent);
+}
+
+.lp-signal-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  touch-action: none;
+}
+
+.lp-signal-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.lp-signal-col-track {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  min-height: 150px;
+}
+
+.lp-signal-col-fill {
+  width: 100%;
+  min-height: 10px;
+  border-radius: 5px 5px 0 0;
+  background: var(--border-strong);
+  transition: height 0.3s var(--ease), background 0.2s var(--ease);
+}
+
+.lp-signal-col:hover .lp-signal-col-fill {
+  background: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
+
+.lp-signal-col.is-active .lp-signal-col-fill {
+  background: var(--accent);
+}
+
+.lp-signal-col-label {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  transition: color 0.2s var(--ease);
+}
+
+.lp-signal-col.is-active .lp-signal-col-label {
+  color: var(--accent);
+}
+
+/* -- 3. Safe handover: an even 2x2 grid of matching tiles. All start
+   neutral; hovering one tints it with the accent (soft fill + accent
+   border + accent numeral). The shift is a slow fade with no lift,
+   shadow, or pointer cursor, so it reads as a highlight, not a button. -- */
+.lp-bento {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.lp-bento-tile {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  padding: 24px 24px 26px;
+  transition: background 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+
+.lp-bento-tile:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.lp-bento-k {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 2.6rem;
+  line-height: 1;
+  color: var(--border-strong);
+  opacity: 0.55;
+  transition: color 0.25s var(--ease), opacity 0.25s var(--ease);
+}
+
+.lp-bento-tile:hover .lp-bento-k {
+  color: var(--accent);
+  opacity: 0.32;
+}
+
+.lp-bento-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.08rem;
+  margin: 0 0 8px;
+  padding-right: 40px;
+  position: relative;
+}
+
+.lp-bento-body {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin: 0;
+  position: relative;
+}
+
+/* -- 4. Closing band -- */
+.lp-closing {
+  position: relative;
+  z-index: 1;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 80px 24px 64px;
+  text-align: center;
+}
+
+.lp-closing-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.9rem, 4.4vw, 2.8rem);
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+}
+
+.lp-closing-sub {
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 460px;
+  margin: 0 auto 30px;
+}
+
+@media (max-width: 860px) {
+  .lp-timeline {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .lp-timeline::before {
+    top: 0;
+    bottom: 0;
+    left: 25px;
+    right: auto;
+    width: 2px;
+    height: auto;
+    background: repeating-linear-gradient(180deg, var(--border-strong) 0 6px, transparent 6px 12px);
+  }
+
+  .lp-tl-item {
+    padding: 12px 0 12px 74px;
+  }
+
+  .lp-tl-num {
+    position: absolute;
+    left: 0;
+    top: 8px;
+    margin: 0;
+  }
+
+  .lp-signal-card {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 24px;
+  }
+
+  .lp-signal-info {
+    min-height: 0;
+  }
+
+  .lp-signal-col-track {
+    min-height: 110px;
+  }
+
+  .lp-bento {
+    grid-template-columns: 1fr;
+  }
+
+  /* the gutter-bleed decorations have no gutter to live in once the content
+     goes full-width, so drop them rather than let them crowd the edges */
+  .lp-deco {
+    display: none;
+  }
+}
+
 
 /* --------------------------------------------------------------------------
-   4. Dashboard page — pages/Dashboard.jsx
+   4. Dashboard page: pages/Dashboard.jsx
    -------------------------------------------------------------------------- */
 
 .dashboard {
@@ -703,7 +1264,7 @@ button {
   color: var(--lost);
 }
 
-/* --- Profile / "My account" page — pages/Profile.jsx ---------------- */
+/* --- Profile / "My account" page: pages/Profile.jsx ---------------- */
 
 .profile {
   padding: 48px 24px 100px;
@@ -756,6 +1317,23 @@ button {
 
 .profile-section {
   margin-top: 44px;
+}
+
+/* Lost + Found sit side by side while each holds at most one card, so a
+   lone card doesn't leave half the row empty. Drops back to stacked
+   full-width via the JS toggle the moment either list has 2+ cards. */
+.profile-reports--split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .profile-reports--split {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
 }
 
 /* Right-aligned button row inside the name / password modals. */
@@ -822,6 +1400,41 @@ button {
   color: var(--text-muted);
 }
 
+.password-input {
+  position: relative;
+  display: flex;
+}
+
+/* .field input already styles this via the descendant selector below --
+   this just widens it to fill the wrapper and leaves room for the icon. */
+.password-input input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+.password-input-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.password-input-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -875,7 +1488,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   5. NoticeCard — components/NoticeCard.jsx
+   5. NoticeCard: components/NoticeCard.jsx
    -------------------------------------------------------------------------- */
 
 .notice-card {
@@ -894,27 +1507,57 @@ button {
   box-shadow: var(--shadow-md);
 }
 
-.notice-thumb {
-  margin: -18px -18px 12px;
-  height: 140px;
+.notice-photo-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notice-photo-view-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Wider, padding-free variant of .modal-panel for the photo lightbox --
+   the default 420px/22px-padding sizing is meant for short text
+   confirm dialogs, not an image. */
+.modal-panel--photo {
+  max-width: 640px;
+  padding: 0;
   overflow: hidden;
-  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.photo-viewer {
+  position: relative;
   background: var(--surface-hover);
 }
 
-.notice-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.photo-viewer img {
   display: block;
+  width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
 }
 
-.notice-card--compact .notice-thumb {
-  height: 96px;
-}
-
-.notice-thumb {
-  position: relative;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .notice-thumb-redacted-badge {
@@ -959,6 +1602,12 @@ button {
 
 .notice-tag-row .notice-tag {
   margin-bottom: 10px;
+}
+
+/* Resolved is a state, not a category tag, so float it to the far end
+   of the row instead of sitting beside the Lost / Found chip. */
+.notice-tag-row .notice-tag--resolved {
+  margin-left: auto;
 }
 
 .notice-tag--risk {
@@ -1039,6 +1688,10 @@ button {
   text-decoration: underline;
 }
 
+.notice-footer-link--danger {
+  color: var(--lost);
+}
+
 .notice-primary-action {
   width: 100%;
   margin-top: 12px;
@@ -1062,7 +1715,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   6. ReportForm page — pages/ReportForm.jsx
+   6. ReportForm page: pages/ReportForm.jsx
    -------------------------------------------------------------------------- */
 
 .report-page {
@@ -1397,7 +2050,7 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   7. Matches page — pages/Matches.jsx
+   7. Matches page: pages/Matches.jsx
    -------------------------------------------------------------------------- */
 
 .matches-page {
@@ -1925,13 +2578,15 @@ button {
   font-family: var(--font-body);
 }
 .chat-widget__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 56px;
   height: 56px;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 24px;
   cursor: pointer;
   box-shadow: var(--shadow-md);
   transition: background-color 0.25s var(--ease), transform 0.2s var(--ease-spring);

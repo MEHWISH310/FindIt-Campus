@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setPassword as setPasswordApi, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import PasswordInput from '../components/PasswordInput';
 
 export default function SetPassword() {
   const [newPassword, setNewPassword] = useState('');
@@ -46,8 +47,7 @@ export default function SetPassword() {
 
         <label className="field">
           <span>New password</span>
-          <input
-            type="password"
+          <PasswordInput
             required
             minLength={8}
             value={newPassword}
@@ -57,8 +57,7 @@ export default function SetPassword() {
 
         <label className="field">
           <span>Confirm new password</span>
-          <input
-            type="password"
+          <PasswordInput
             required
             minLength={8}
             value={confirmPassword}

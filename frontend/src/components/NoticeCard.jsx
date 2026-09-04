@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { API_BASE, deleteReport } from '../api/client';
+import Modal from './Modal';
 
 function timeAgo(dateString) {
   if (!dateString) return '';
@@ -15,11 +17,11 @@ function timeAgo(dateString) {
  * report: { id, report_type, title, description, category, color, brand,
  *           location_name, item_datetime, status, created_at, reporter_id }
  * compact: hides the description (used in the Matches connector rows)
- * onFindMatches: optional — shows a "Find matches" link that fires this
- * primaryAction: optional { label, onClick } — shows a solid button in the
+ * onFindMatches: optional. Shows a "Find matches" link that fires this
+ * primaryAction: optional { label, onClick }. Shows a solid button in the
  *   footer (used for "Claim this item" so it reads as the card's main
  *   call to action, not a stray link floating outside the card)
- * currentUserId: id of the logged-in user, if any — used to decide
+ * currentUserId: id of the logged-in user, if any. Used to decide
  *   whether to show the Delete link (only the reporter sees it)
  * token: logged-in user's JWT, needed to authorize the delete call
  * onDeleted: called with report.id after a successful delete, so the
@@ -40,6 +42,7 @@ export default function NoticeCard({
   const isResolved = report.status === 'resolved';
   const photosRedacted = report.photos_redacted && thumbnail;
   const isOwner = Boolean(currentUserId) && report.reporter_id === currentUserId;
+  const [photoOpen, setPhotoOpen] = useState(false);
 
   async function handleDelete() {
     if (!window.confirm('Delete this report? This cannot be undone.')) return;
@@ -54,14 +57,50 @@ export default function NoticeCard({
   return (
     <div className={`notice-card ${isFound ? 'notice-card--found' : ''} ${compact ? 'notice-card--compact' : ''}`}>
       {thumbnail && (
-        <div className="notice-thumb">
-          <img src={`${API_BASE}${thumbnail}`} alt="" className={photosRedacted ? 'notice-thumb-img--redacted' : ''} />
-          {photosRedacted && (
-            <span className="notice-thumb-redacted-badge" title="Photo is pixelated until a claim is verified, since this is a high-risk item">
-              Hidden until claimed
-            </span>
+        <>
+          <button
+            type="button"
+            className="notice-photo-view-btn"
+            onClick={() => setPhotoOpen(true)}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+              <path
+                d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+            </svg>
+            {photosRedacted ? 'View photo (pixelated)' : 'View photo'}
+          </button>
+
+          {photoOpen && (
+            <Modal
+              onClose={() => setPhotoOpen(false)}
+              labelledBy="photo-viewer-heading"
+              className="modal-panel--photo"
+            >
+              {/* Visually hidden -- the dialog still needs an accessible
+                  name, but a photo viewer doesn't need a visible title. */}
+              <h2 id="photo-viewer-heading" className="sr-only">
+                {report.title} photo
+              </h2>
+              <div className="photo-viewer">
+                <img src={`${API_BASE}${thumbnail}`} alt="" />
+                {photosRedacted && (
+                  <span
+                    className="notice-thumb-redacted-badge"
+                    title="Photo is pixelated until a claim is verified, since this is a high-risk item"
+                  >
+                    Hidden until claimed
+                  </span>
+                )}
+              </div>
+            </Modal>
           )}
-        </div>
+        </>
       )}
       <div className="notice-tag-row">
         <span className={`notice-tag ${isFound ? 'notice-tag--found' : 'notice-tag--lost'}`}>
@@ -87,7 +126,7 @@ export default function NoticeCard({
       {!compact && <p className="notice-desc">{report.description}</p>}
       {report.is_stale && !compact && (
         <p className="notice-stale-note">
-          Still searching — reported {report.days_open} days ago
+          Still searching. Reported {report.days_open} days ago.
         </p>
       )}
       <dl className="notice-meta">

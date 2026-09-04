@@ -2,7 +2,14 @@
 POST /matches/find/{report_id} runs the actual matching pipeline:
   1. pull the report + every opposite-type OPEN report
   2. score each pair with fusion.composite_score()
-  3. save the results as Match rows, sorted best-first
+  3. save the results as Match rows, sorted best-first -- reusing any
+     Match row that already exists for a given lost/found pair instead
+     of inserting a duplicate every time this endpoint is called (e.g.
+     every time someone opens/refreshes the matches page)
+
+The real-time ping and "possible match" email only fire the first time
+a given pair becomes the top match, not on every subsequent call -- see
+the notes on the notification block below.
 
 Calibration (turning raw_score into a probability) loads a persisted,
 pre-fitted MatchCalibrator from disk if one exists (see
@@ -12,7 +19,6 @@ null, so the UI falls back to showing raw_score/ranking.
 """
 
 import math
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -33,16 +39,17 @@ from app.routers.schemas import (
     MatchOut,
     ClaimRequest,
     ClaimResponse,
+    CheckAnswerRequest,
+    CheckAnswerResponse,
     FoundContactOut,
     ClaimantInfoOut,
 )
 from app.matching.embeddings import cosine_sim
 from app.matching.fusion import ReportSignals, composite_score, competing_cluster
 from app.matching.calibration import MatchCalibrator
-from app.matching.redaction import reveal_photos
 from app.realtime import sio
 from app.core.email import send_email
-from app.routers.auth import get_current_user_optional
+from app.routers.auth import get_current_user_optional, get_current_user
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -207,34 +214,72 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     competing_ids = {scored[i][0].id for i in cluster_indices}
     needs_disambiguation = len(competing_ids) >= 2
 
+    # Dedupe against matches already saved for this report (from an
+    # earlier call to this same endpoint -- e.g. someone just refreshing
+    # the matches page). Without this, every single page-load created
+    # brand-new duplicate Match rows for the same lost/found pair AND
+    # re-sent the "possible match" email every time, regardless of
+    # whether anything had actually changed -- that's what was causing a
+    # dozens-of-emails-in-minutes spam storm from repeat visits/refreshes.
+    existing_by_pair = {
+        (m.lost_report_id, m.found_report_id): m
+        for m in db.query(Match)
+        .filter((Match.lost_report_id == report.id) | (Match.found_report_id == report.id))
+        .all()
+    }
+
     saved_matches = []
-    for candidate, result in scored[:5]:  # keep top 5 candidates
+    top_match_is_new = False
+    for i, (candidate, result) in enumerate(scored[:5]):  # keep top 5 candidates
         lost_id = report.id if report.report_type == ReportType.LOST else candidate.id
         found_id = candidate.id if report.report_type == ReportType.LOST else report.id
         in_cluster = needs_disambiguation and candidate.id in competing_ids
 
         match_probability = _calibrator.predict_proba(result["score"]) if _calibrator else None
 
-        match = Match(
-            lost_report_id=lost_id,
-            found_report_id=found_id,
-            raw_score=result["score"],
-            match_probability=match_probability,
-            used_signals=result["used_signals"],
-            signal_weights=result["weights"],
-            status=MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE,
-            disambiguation_question=_disambiguation_question(candidate) if in_cluster else None,
-        )
-        db.add(match)
+        existing = existing_by_pair.get((lost_id, found_id))
+        is_new = existing is None
+
+        if existing:
+            match = existing
+            # Only refresh the score/signals if nobody's acted on this
+            # match yet -- once it's VERIFIED/CONFIRMED/REJECTED, leave it
+            # alone instead of silently rewriting state out from under
+            # whatever the claimant/admin already did.
+            if match.status in (MatchStatus.CANDIDATE, MatchStatus.NEEDS_DISAMBIGUATION):
+                match.raw_score = result["score"]
+                match.match_probability = match_probability
+                match.used_signals = result["used_signals"]
+                match.signal_weights = result["weights"]
+                match.status = MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE
+                match.disambiguation_question = _disambiguation_question(candidate) if in_cluster else None
+        else:
+            match = Match(
+                lost_report_id=lost_id,
+                found_report_id=found_id,
+                raw_score=result["score"],
+                match_probability=match_probability,
+                used_signals=result["used_signals"],
+                signal_weights=result["weights"],
+                status=MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE,
+                disambiguation_question=_disambiguation_question(candidate) if in_cluster else None,
+            )
+            db.add(match)
+
+        if i == 0:
+            top_match_is_new = is_new
         saved_matches.append(match)
 
     db.commit()
     for m in saved_matches:
         db.refresh(m)
 
-    # Real-time "match found" ping -- only for a genuinely strong top
-    # candidate, so this doesn't fire for every low-confidence guess.
-    if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD:
+    # Real-time "match found" ping + email -- only for a genuinely strong
+    # top candidate, AND only the first time this exact pair shows up as
+    # the top match. Otherwise every subsequent page visit for the same
+    # report (by the owner, or by anyone who can reach the matches page)
+    # would re-trigger both, which is what caused the email spam.
+    if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD and top_match_is_new:
         top_candidate, top_result = scored[0]
         top_probability = _calibrator.predict_proba(top_result["score"]) if _calibrator else None
         await sio.emit(
@@ -274,37 +319,31 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     return saved_matches
 
 
-@router.post("/{match_id}/verify", response_model=ClaimResponse)
-async def verify_claim(
+@router.post("/{match_id}/check-answer", response_model=CheckAnswerResponse)
+async def check_answer(
     match_id: str,
-    payload: ClaimRequest,
+    payload: CheckAnswerRequest,
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
 ):
     """
-    Asymmetric verification (per your abstract): whoever is claiming the
-    item must answer the FOUND report's hidden_question correctly -- we
-    never show them hidden_answer, we just check equality server-side.
+    Step 1 of the two-step claim flow: just checks the verification-question
+    answer and reports back correct/incorrect -- nothing is saved, no match
+    state changes either way. This is what lets the claim form ask "answer
+    first, THEN fill in your details" instead of collecting everything
+    upfront only to reject it all on a wrong answer.
 
-    On a correct answer:
-      - match.status -> CONFIRMED
-      - both the lost and found reports -> RESOLVED
-      - a CustodyRecord is written as the audit trail of the handover
-
-    On a wrong answer: 200 with verified=false (not a 4xx -- this is an
-    expected outcome the frontend needs to render inline, not an error),
-    match/report state is left untouched so they can retry.
-
-    No staff/auth layer exists yet, so verifier_name is a placeholder --
-    swap this for the logged-in staff/volunteer's name once auth (backlog
-    Task 8) lands.
+    Same ownership check as verify_claim (only the lost report's own
+    reporter can even attempt this) -- otherwise this would just be an
+    easier oracle to guess someone else's hidden_answer against, without
+    even the friction of typing in a name/reg number first.
     """
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(404, "Match not found")
 
-    if match.status == MatchStatus.CONFIRMED:
-        raise HTTPException(400, "This match has already been confirmed and claimed.")
+    if match.status in (MatchStatus.VERIFIED, MatchStatus.CONFIRMED):
+        raise HTTPException(400, "This match has already been verified and is awaiting/complete pickup.")
     if match.status == MatchStatus.REJECTED:
         raise HTTPException(400, "This match was rejected and can no longer be claimed.")
 
@@ -312,6 +351,91 @@ async def verify_claim(
     lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
     if not found_report or not lost_report:
         raise HTTPException(404, "One of the reports behind this match no longer exists")
+
+    if lost_report.reporter_id != user.id:
+        raise HTTPException(
+            403,
+            "Only the person who filed the lost report can claim this match.",
+        )
+
+    if not found_report.hidden_answer:
+        raise HTTPException(400, "This found report has no verification question set up")
+
+    is_correct = payload.hidden_answer.strip().lower() == found_report.hidden_answer.strip().lower()
+    return CheckAnswerResponse(correct=is_correct)
+
+
+@router.post("/{match_id}/verify", response_model=ClaimResponse)
+async def verify_claim(
+    match_id: str,
+    payload: ClaimRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Asymmetric verification (per your abstract): whoever is claiming the
+    item must answer the FOUND report's hidden_question correctly -- we
+    never show them hidden_answer, we just check equality server-side.
+
+    Only the person who actually filed the LOST report behind this match
+    is allowed to attempt the claim -- otherwise anyone who stumbled onto
+    (or guessed) a match_id could try to answer the finder's verification
+    question for someone else's item. So this now requires login
+    (get_current_user, not get_current_user_optional) and checks
+    lost_report.reporter_id == user.id before even looking at the
+    submitted answer. A lost report filed before auth was wired up (no
+    reporter_id) has no verifiable owner, so it's rejected too --
+    nobody can claim on its behalf.
+
+    On a correct answer:
+      - match.status -> VERIFIED (NOT yet CONFIRMED -- the item is still
+        sitting with admin; the finder already handed it over physically
+        when they filed the found report, and admin only marks it
+        CONFIRMED once they've actually handed it to the owner in person.
+        See custody.py's confirm_handover.)
+      - reports are left as-is (still MATCHED) -- they only flip to
+        RESOLVED at the actual handover, not at verification time
+      - no CustodyRecord yet, no email to the finder yet -- both happen
+        at handover, so the finder is only told once the item has
+        genuinely left admin's hands, not just because someone answered
+        a question correctly online
+
+    On a wrong answer: 200 with verified=false (not a 4xx -- this is an
+    expected outcome the frontend needs to render inline, not an error),
+    match/report state is left untouched so they can retry.
+    """
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+
+    if match.status in (MatchStatus.VERIFIED, MatchStatus.CONFIRMED):
+        raise HTTPException(400, "This match has already been verified and is awaiting/complete pickup.")
+    if match.status == MatchStatus.REJECTED:
+        raise HTTPException(400, "This match was rejected and can no longer be claimed.")
+
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    if not found_report or not lost_report:
+        raise HTTPException(404, "One of the reports behind this match no longer exists")
+
+    if lost_report.reporter_id != user.id:
+        raise HTTPException(
+            403,
+            "Only the person who filed the lost report can claim this match.",
+        )
+
+    # claimant_email and claimant_registration_number are shown pre-filled
+    # in the UI from the logged-in account, but we still check them against
+    # that account server-side rather than trusting the submitted values --
+    # same reasoning as the reporter_id check above, just one level more
+    # paranoid, since these two are meant to double as the identity record
+    # admin checks the claimant against at physical handover.
+    if payload.claimant_email.strip().lower() != user.email.strip().lower():
+        raise HTTPException(400, "Email doesn't match your logged-in account.")
+    if not user.registration_number or (
+        payload.claimant_registration_number.strip().upper() != user.registration_number.strip().upper()
+    ):
+        raise HTTPException(400, "Registration number doesn't match our records for your account.")
 
     if not found_report.hidden_answer:
         raise HTTPException(400, "This found report has no verification question set up")
@@ -328,66 +452,35 @@ async def verify_claim(
             custody_record=None,
         )
 
-    match.status = MatchStatus.CONFIRMED
-    found_report.status = ReportStatus.RESOLVED
-    lost_report.status = ReportStatus.RESOLVED
-
-    # Claim's verified, so the redaction has done its job -- swap the
-    # clear originals back over the public photo paths (no-op if this
-    # report was never high-risk / never had photos; see redaction.py).
-    if found_report.is_high_risk == "true" and found_report.photo_paths:
-        report_dir = os.path.join(settings.upload_dir, str(found_report.id))
-        filenames = [os.path.basename(p) for p in found_report.photo_paths]
-        reveal_photos(report_dir, filenames)
-
-    record = CustodyRecord(
-        match_id=match.id,
-        item_name=found_report.title,
-        claimant_name=payload.claimant_name,
-        claimant_contact=payload.claimant_contact,
-        verifier_name="Self-service verification (no staff auth yet)",
-        notes=payload.notes,
-        identity_verified="true",
-    )
-    db.add(record)
+    match.status = MatchStatus.VERIFIED
+    # Stash who's coming to collect it and how to reach them -- admin needs
+    # this at handover time to write the real CustodyRecord (see
+    # custody.py's confirm_handover).
+    match.pending_claimant_name = payload.claimant_name
+    match.pending_claimant_contact = payload.claimant_contact
+    match.pending_claimant_notes = payload.notes
+    match.pending_claimant_registration_number = payload.claimant_registration_number
     db.commit()
     db.refresh(match)
-    db.refresh(record)
 
     await sio.emit(
-        "item:claimed",
+        "match:verified",
         {
             "match_id": str(match.id),
-            "item_name": record.item_name,
-            "claimant_name": record.claimant_name,
+            "item_name": found_report.title,
+            "claimant_name": payload.claimant_name,
         },
     )
 
-    # Email the FOUND-side reporter that someone has claimed their item --
-    # per the flow, the finder never sees the claimant's details in the
-    # email itself, only that a claim happened; they view the actual name
-    # /contact on the site (GET /matches/{id}, gated to them once
-    # CONFIRMED -- see _build_match_out).
-    if found_report.reporter_id:
-        finder = db.query(User).filter(User.id == found_report.reporter_id).first()
-        if finder:
-            send_email(
-                to_email=finder.email,
-                subject="Someone claimed the item you found",
-                body=(
-                    f"Hi {finder.name or ''},\n\n"
-                    f"A person has claimed the item you reported found (\"{found_report.title}\") "
-                    "and correctly answered your verification question.\n\n"
-                    f"See their details on the site: {settings.frontend_base_url}/matches/{lost_report.id}\n\n"
-                    "Thanks for helping return it!"
-                ),
-            )
-
     return ClaimResponse(
         verified=True,
-        message="Verified! This item has been marked as returned to its owner.",
+        message=(
+            f"Verified! Go collect this item from admin"
+            f"{f' at {found_report.collection_point}' if found_report.collection_point else ''}."
+        ),
         match=_build_match_out(match, db, user),
-        custody_record=record,
+        custody_record=None,
+        collection_point=found_report.collection_point,
     )
 
 

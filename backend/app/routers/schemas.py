@@ -28,10 +28,30 @@ class ReportCreate(BaseModel):
     # must answer before contact info is revealed.
     hidden_question: Optional[str] = None
     hidden_answer: Optional[str] = None
+    # Only relevant when report_type == "found": where the finder physically
+    # handed the item to admin, e.g. "Main Gate security desk". This is
+    # what the owner is told once verified -- see ReportOut.collection_point.
+    collection_point: Optional[str] = None
+
+
+class ReporterInfoOut(BaseModel):
+    """Who filed this report. Only ever populated when the requester is an
+    admin (see reports.py's _serialize_report) -- regular users never learn
+    who filed a report, even one they're matched against; only admins,
+    who physically handle the handover, need to know."""
+    id: UUID
+    name: Optional[str]
+    email: str
+    phone: Optional[str]
 
 
 class ReportOut(BaseModel):
     id: UUID
+    # Kept (just the UUID, not identity) so the frontend can still tell
+    # "is this my report" (see NoticeCard.jsx/Profile.jsx) without leaking
+    # who anyone else is -- a bare UUID isn't resolvable to a name/email by
+    # a non-admin. Actual identity only ever comes through in `reporter`
+    # below, and only for admins.
     reporter_id: Optional[UUID] = None
     report_type: str
     status: str
@@ -51,11 +71,17 @@ class ReportOut(BaseModel):
     # to see in order to know what they're being asked to prove. Only ever
     # set on FOUND reports; null on LOST reports.
     hidden_question: Optional[str] = None
+    # Only meaningful on FOUND reports -- where admin is physically holding
+    # the item. Shown to the owner once their claim is verified.
+    collection_point: Optional[str] = None
     # True while photo_paths point at pixelated copies (high-risk + still
     # unclaimed) -- see matching/redaction.py. Lets the frontend show a
     # "photo hidden until claim is verified" notice instead of just
     # silently rendering a blurry image with no explanation.
     photos_redacted: bool = False
+    # Admin-only (see ReporterInfoOut docstring) -- null for everyone else,
+    # including the reports someone filed themselves (they already know).
+    reporter: Optional[ReporterInfoOut] = None
 
     @field_validator("is_high_risk", mode="before")
     @classmethod
@@ -111,9 +137,17 @@ class MatchOut(BaseModel):
 
 class ClaimRequest(BaseModel):
     """Submitted by whoever is trying to claim a FOUND item -- they must
-    answer the finder's hidden_question correctly. claimant_contact is
-    optional (e.g. they hand it over in person and just want it logged)."""
+    answer the finder's hidden_question correctly. claimant_name,
+    claimant_registration_number, and claimant_email are all required so
+    admin has a filled-in identity record to check the claimant against
+    at physical handover, on top of the hidden-answer check itself.
+    claimant_registration_number and claimant_email are cross-checked
+    against the logged-in user's own account in verify_claim -- they
+    can't be used to claim as someone else. claimant_contact (a second,
+    optional contact detail) is the only optional field."""
     claimant_name: str
+    claimant_registration_number: str
+    claimant_email: str
     claimant_contact: Optional[str] = None
     hidden_answer: str
     notes: Optional[str] = None
@@ -141,8 +175,60 @@ class CustodyRecordOut(BaseModel):
         from_attributes = True
 
 
+class CheckAnswerRequest(BaseModel):
+    """Step 1 of the two-step claim form: just the verification-question
+    answer, nothing else. Lets the frontend tell the claimant right away
+    whether they got it right, before asking them to fill in their name,
+    registration number, etc. Doesn't touch match/report state either
+    way -- see check_answer below."""
+    hidden_answer: str
+
+
+class CheckAnswerResponse(BaseModel):
+    correct: bool
+
+
+class MyClaimOut(BaseModel):
+    """One row in the logged-in user's own 'Things I claimed' list --
+    merges VERIFIED-but-not-yet-handed-over matches (status='pending')
+    with actual completed handovers (status='completed') into a single
+    timeline, since from the claimant's point of view both are 'things
+    I claimed', just at different stages. See custody.py's
+    list_my_claims."""
+    id: str
+    item_name: str
+    status: str  # "pending" | "completed"
+    handover_datetime: Optional[datetime] = None
+    collection_point: Optional[str] = None
+
+
 class ClaimResponse(BaseModel):
     verified: bool
     message: str
     match: Optional[MatchOut] = None
     custody_record: Optional[CustodyRecordOut] = None
+    # Only set when verified=true -- where the owner needs to go to
+    # physically collect the item from admin. Mirrors the found report's
+    # collection_point so the frontend doesn't need a second fetch.
+    collection_point: Optional[str] = None
+
+
+class PendingPickupOut(BaseModel):
+    """One row in the admin dashboard's 'ready for handover' list -- a
+    match that's VERIFIED (claimant answered correctly) but not yet
+    CONFIRMED (admin hasn't physically handed the item over). Admin-only,
+    see custody.py's list_pending_pickups."""
+    match_id: UUID
+    item_title: str
+    category: Optional[str]
+    collection_point: Optional[str]
+    found_report_id: UUID
+    lost_report_id: UUID
+    # Who found it and handed it to admin, and who's coming to collect it --
+    # only ever shown to admins, this is the whole point of this endpoint.
+    finder: Optional[ReporterInfoOut] = None
+    owner: Optional[ReporterInfoOut] = None
+    verified_at: datetime
+
+    class Config:
+        from_attributes = True

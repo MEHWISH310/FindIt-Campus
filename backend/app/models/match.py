@@ -21,7 +21,13 @@ from app.db.session import Base
 class MatchStatus(str, enum.Enum):
     CANDIDATE = "candidate"            # system suggested it, nobody's acted yet
     NEEDS_DISAMBIGUATION = "needs_disambiguation"  # top candidates too close, asked a follow-up
-    CONFIRMED = "confirmed"            # claimant verified successfully
+    # Claimant answered the hidden_question correctly, but the item hasn't
+    # physically changed hands yet -- it's still sitting with admin. The
+    # owner sees a persistent "go collect it from admin" status until an
+    # admin marks the handover done (see custody.py's confirm_handover),
+    # which is what actually moves this to CONFIRMED.
+    VERIFIED = "verified"
+    CONFIRMED = "confirmed"            # admin has physically handed the item over
     REJECTED = "rejected"              # claimant failed verification, or a human rejected it
 
 
@@ -49,6 +55,22 @@ class Match(Base):
     # If disambiguation was triggered, store the question asked + answer given
     disambiguation_question = Column(String(300), nullable=True)
     disambiguation_answer = Column(String(300), nullable=True)
+
+    # Set when verify_claim succeeds (status -> VERIFIED) -- held here
+    # until an admin actually hands the item over (custody.py's
+    # confirm_handover), at which point it's copied into the real
+    # CustodyRecord. Kept on Match rather than writing a CustodyRecord
+    # immediately, since a CustodyRecord is supposed to mean "this
+    # physically happened", not "someone typed the right answer online".
+    pending_claimant_name = Column(String(200), nullable=True)
+    pending_claimant_contact = Column(String(200), nullable=True)
+    pending_claimant_notes = Column(String(500), nullable=True)
+    # Registration number the claimant typed in on the claim form -- an
+    # extra cross-check alongside the hidden_answer, similar in spirit to
+    # the registration_number check in /auth/request-access. Verified
+    # against the logged-in user's own User.registration_number in
+    # verify_claim before this even gets set.
+    pending_claimant_registration_number = Column(String(50), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

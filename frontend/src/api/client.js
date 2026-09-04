@@ -13,6 +13,15 @@ function notifyReportsChanged() {
   window.dispatchEvent(new Event(REPORTS_CHANGED_EVENT));
 }
 
+// Same idea for one-off, locally-triggered toasts (e.g. "handover
+// confirmed"): NotificationToast listens for this and drops the message
+// into the same toast stack the live socket events use, so success
+// feedback for an action you just took looks identical to a push.
+export const TOAST_EVENT = 'findit:toast';
+export function showToast(message) {
+  window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { message } }));
+}
+
 class ApiError extends Error {
   constructor(message, status, body) {
     super(message);
@@ -65,7 +74,7 @@ async function request(path, options = {}) {
   return body;
 }
 
-/** POST /reports/  — create a lost or found report. */
+/** POST /reports/ : create a lost or found report. */
 export async function createReport(payload) {
   const report = await request('/reports/', {
     method: 'POST',
@@ -75,7 +84,7 @@ export async function createReport(payload) {
   return report;
 }
 
-/** GET /reports/  — optionally filtered by report_type ('lost' | 'found'). */
+/** GET /reports/ : optionally filtered by report_type ('lost' | 'found'). */
 export function listReports(reportType) {
   const qs = reportType ? `?report_type=${encodeURIComponent(reportType)}` : '';
   return request(`/reports/${qs}`);
@@ -86,13 +95,13 @@ export function getReport(reportId) {
   return request(`/reports/${reportId}`);
 }
 
-/** POST /matches/find/{report_id} — run the AI matching pipeline for a report. */
+/** POST /matches/find/{report_id} : run the AI matching pipeline for a report. */
 export function findMatches(reportId) {
   return request(`/matches/find/${reportId}`, { method: 'POST' });
 }
 
 /**
- * POST /reports/{report_id}/photos — attach photos to an existing report.
+ * POST /reports/{report_id}/photos : attach photos to an existing report.
  * `files` is a FileList or array of File objects (max 5, from ReportForm's
  * file input). Doesn't go through request() because we must NOT set a
  * Content-Type header here -- the browser sets its own multipart boundary
@@ -126,7 +135,7 @@ export async function uploadPhotos(reportId, files) {
 }
 
 /**
- * POST /reports/escalate-stale — sweep FOUND high-risk reports unclaimed
+ * POST /reports/escalate-stale : sweep FOUND high-risk reports unclaimed
  * for 7+ days and mark them ESCALATED. No scheduler is wired up yet, so
  * this is triggered manually via the "Run escalation check" button on
  * the Found dashboard rather than running automatically in the background.
@@ -135,11 +144,22 @@ export function escalateStale() {
   return request('/reports/escalate-stale', { method: 'POST' });
 }
 
+/** POST /matches/{match_id}/check-answer : step 1 of the two-step claim
+ * form -- just checks the verification-question answer, no state change
+ * either way. Returns { correct }. */
+export function checkClaimAnswer(matchId, hiddenAnswer) {
+  return request(`/matches/${matchId}/check-answer`, {
+    method: 'POST',
+    body: JSON.stringify({ hidden_answer: hiddenAnswer }),
+  });
+}
+
 /**
- * POST /matches/{match_id}/verify — submit a claim attempt (claimant_name,
- * claimant_contact, hidden_answer, notes). Returns { verified, message,
- * match, custody_record }. A wrong answer comes back as verified: false,
- * not a thrown error, so the form can show it inline and let them retry.
+ * POST /matches/{match_id}/verify : submit a claim attempt (claimant_name,
+ * claimant_registration_number, claimant_email, claimant_contact,
+ * hidden_answer, notes). Returns { verified, message, match,
+ * custody_record }. A wrong answer comes back as verified: false, not a
+ * thrown error, so the form can show it inline and let them retry.
  * A correct answer resolves both reports, so we fire the reports-changed
  * event to bump counts back down (see Header.jsx).
  */
@@ -154,18 +174,27 @@ export async function claimMatch(matchId, payload) {
   return result;
 }
 
-/** GET /custody/ — the full handover log, for the "Claimed items" page. */
+/** GET /custody/ : the full handover log, for the "Claimed items" page. */
 export function listCustodyRecords() {
   return request('/custody/');
 }
 
-/** GET /custody/mine — handovers where the logged-in user is the claimant. */
+/** GET /custody/mine : handovers where the logged-in user is the claimant. */
 export function listMyCustodyRecords() {
   return request('/custody/mine');
 }
 
+/** GET /custody/mine/claims : everything the logged-in user has claimed,
+ * pending (verified, not yet handed over) and completed (already handed
+ * over) merged into one list -- powers the "Things I claimed" section on
+ * the profile page. Each row: { id, item_name, status: 'pending'|
+ * 'completed', handover_datetime, collection_point }. */
+export function listMyClaims() {
+  return request('/custody/mine/claims');
+}
+
 /**
- * POST /matches/{match_id}/disambiguate — forced-choice resolution when
+ * POST /matches/{match_id}/disambiguate : forced-choice resolution when
  * multiple candidates were too close to auto-rank (status
  * NEEDS_DISAMBIGUATION). `matchId` is the one the user picked as theirs;
  * the backend promotes it back to a normal CANDIDATE and rejects the rest
@@ -179,7 +208,7 @@ export { ApiError };
 
 // --- Auth ---------------------------------------------------------------
 
-/** POST /auth/request-access — first-time signup: claims/verifies the
+/** POST /auth/request-access : first-time signup, claims/verifies the
  * registration number against a pre-added account row. */
 export function requestAccess(email, registrationNumber) {
   return request('/auth/request-access', {
@@ -188,7 +217,7 @@ export function requestAccess(email, registrationNumber) {
   });
 }
 
-/** POST /auth/forgot-password — already has an account, forgot the password. */
+/** POST /auth/forgot-password : already has an account, forgot the password. */
 export function forgotPassword(email) {
   return request('/auth/forgot-password', {
     method: 'POST',
@@ -196,7 +225,7 @@ export function forgotPassword(email) {
   });
 }
 
-/** POST /auth/login — returns { access_token, must_set_password, user }. */
+/** POST /auth/login : returns { access_token, must_set_password, user }. */
 export function login(email, password) {
   return request('/auth/login', {
     method: 'POST',
@@ -204,7 +233,7 @@ export function login(email, password) {
   });
 }
 
-/** POST /auth/set-password — forced first-login / post-reset password set. */
+/** POST /auth/set-password : forced first-login / post-reset password set. */
 export function setPassword(newPassword) {
   return request('/auth/set-password', {
     method: 'POST',
@@ -212,7 +241,7 @@ export function setPassword(newPassword) {
   });
 }
 
-/** POST /auth/change-password — voluntary change, requires the old password. */
+/** POST /auth/change-password : voluntary change, requires the old password. */
 export function changePassword(oldPassword, newPassword) {
   return request('/auth/change-password', {
     method: 'POST',
@@ -237,7 +266,7 @@ export function getMe() {
   return request('/auth/me');
 }
 
-/** PATCH /auth/me — update name/phone/registration_number. */
+/** PATCH /auth/me : update name/phone/registration_number. */
 export function updateMe(payload) {
   return request('/auth/me', {
     method: 'PATCH',
@@ -245,7 +274,7 @@ export function updateMe(payload) {
   });
 }
 
-/** GET /matches/{match_id} — single match, with found_contact/claimant_info
+/** GET /matches/{match_id} : single match, with found_contact/claimant_info
  * filled in when the logged-in user is authorized to see them. */
 export function getMatch(matchId) {
   return request(`/matches/${matchId}`);
@@ -257,4 +286,23 @@ export function sendChatMessage(message, history = []) {
     method: 'POST',
     body: JSON.stringify({ message, history }),
   });
+}
+
+// --- Admin ---------------------------------------------------------------
+// All three require the logged-in user to have is_admin=true (see
+// backend's require_admin) -- a 403 comes back otherwise.
+
+/** GET /custody/admin/pending-pickups — matches that are VERIFIED (claimant
+ * answered correctly) but not yet physically handed over. */
+export function listPendingPickups() {
+  return request('/custody/admin/pending-pickups');
+}
+
+/** POST /custody/admin/{match_id}/handover — admin confirms the item has
+ * physically been handed to the owner. Resolves both reports, writes the
+ * CustodyRecord, and emails the finder. */
+export async function confirmHandover(matchId) {
+  const result = await request(`/custody/admin/${matchId}/handover`, { method: 'POST' });
+  notifyReportsChanged();
+  return result;
 }

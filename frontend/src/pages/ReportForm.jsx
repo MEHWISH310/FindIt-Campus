@@ -30,6 +30,7 @@ const emptyForm = {
   item_datetime: '',
   hidden_question: '',
   hidden_answer: '',
+  collection_point: '',
 };
 
 export default function ReportForm() {
@@ -68,7 +69,7 @@ export default function ReportForm() {
 
     const tooBig = picked.find((f) => f.size > MAX_FILE_SIZE);
     if (tooBig) {
-      setError(`${tooBig.name} is over 8MB — pick a smaller photo.`);
+      setError(`${tooBig.name} is over 8MB. Pick a smaller photo.`);
       return;
     }
 
@@ -97,7 +98,7 @@ export default function ReportForm() {
         setLocating(false);
       },
       () => {
-        setError('Could not read your location — enter it manually below.');
+        setError('Could not read your location. Enter it manually below.');
         setLocating(false);
       }
     );
@@ -109,6 +110,14 @@ export default function ReportForm() {
 
     if (isFound && !form.hidden_question.trim()) {
       setError('A verification question is required for found reports.');
+      return;
+    }
+    if (isFound && !form.hidden_answer.trim()) {
+      setError('The expected answer is required too -- without it, nobody could ever pass verification.');
+      return;
+    }
+    if (isFound && !form.collection_point.trim()) {
+      setError('Tell us where admin will be holding this item so the owner knows where to collect it.');
       return;
     }
 
@@ -127,6 +136,7 @@ export default function ReportForm() {
         item_datetime: form.item_datetime ? new Date(form.item_datetime).toISOString() : null,
         hidden_question: form.hidden_question,
         hidden_answer: form.hidden_answer,
+        collection_point: form.collection_point,
       };
       const report = await createReport(payload);
 
@@ -192,8 +202,8 @@ export default function ReportForm() {
         <div className="field photo-field">
           <span>Photos (optional, up to {MAX_PHOTOS})</span>
           <p className="photo-hint">
-            A clear photo makes matching much more reliable — the system compares
-            photos across reports, not just descriptions.
+            A clear photo makes matching much more reliable, because the system
+            compares photos across reports, not just descriptions.
           </p>
 
           {previews.length > 0 && (
@@ -305,7 +315,7 @@ export default function ReportForm() {
         {isFound && (
           <div className="verification-block">
             <p className="verification-note">
-              Ask something only the real owner would know — this is used to confirm a claim before handoff.
+              Ask something only the real owner would know. This is used to confirm a claim before handoff.
             </p>
             <label className="field">
               <span>Verification question *</span>
@@ -317,11 +327,25 @@ export default function ReportForm() {
               />
             </label>
             <label className="field">
-              <span>Expected answer (optional, kept private)</span>
+              <span>Expected answer *</span>
               <input
+                required
                 value={form.hidden_answer}
                 onChange={(e) => update('hidden_answer', e.target.value)}
+                placeholder="Kept private -- never shown to claimants"
               />
+            </label>
+            <label className="field">
+              <span>Where will you hand this item over to admin? *</span>
+              <input
+                required
+                value={form.collection_point}
+                onChange={(e) => update('collection_point', e.target.value)}
+                placeholder="e.g. Main Gate security desk"
+              />
+              <p className="photo-hint">
+                Once handed over, the owner will be told to collect it from here.
+              </p>
             </label>
           </div>
         )}
@@ -329,7 +353,7 @@ export default function ReportForm() {
         {error && <p className="form-error">{error}</p>}
         {uploadStatus === 'failed' && (
           <p className="form-warning">
-            Report saved, but photo upload failed — you can still find matches on the
+            Report saved, but photo upload failed. You can still find matches on the
             description alone.
           </p>
         )}

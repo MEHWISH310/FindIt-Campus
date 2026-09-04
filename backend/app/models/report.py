@@ -74,6 +74,13 @@ class Report(Base):
     longitude = Column(Float, nullable=True)
     item_datetime = Column(DateTime, nullable=False)       # when lost/found
 
+    # Only meaningful on FOUND reports: where the finder physically handed
+    # the item over to admin (e.g. "Main Gate security desk", "Hostel D
+    # warden's office"). This is what the owner is told to go to once
+    # they're verified -- see matches.py's verify_claim and
+    # ClaimResponse.collection_point.
+    collection_point = Column(String(200), nullable=True)
+
     # Embeddings for matching (nullable -- fusion.py handles missing signals)
     text_embedding = Column(Vector(384), nullable=True)    # from Sentence-Transformers
     image_embedding = Column(Vector(512), nullable=True)   # from CLIP

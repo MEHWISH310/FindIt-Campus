@@ -30,6 +30,10 @@ class CustodyRecord(Base):
     claimant_name = Column(String(200), nullable=False)
     claimant_contact = Column(String(200), nullable=True)  # phone/email, only revealed post-verification
     verifier_name = Column(String(200), nullable=False)    # staff/volunteer who confirmed handover
+    # Which admin account actually clicked "mark handed over" (see
+    # custody.py's confirm_handover) -- verifier_name above stays as the
+    # human-readable display copy, this is the real FK for auditing.
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     handover_datetime = Column(DateTime, default=datetime.utcnow)
     notes = Column(Text, nullable=True)
