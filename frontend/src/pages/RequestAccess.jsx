@@ -53,7 +53,7 @@ export default function RequestAccess() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="mail.20XX@vitstudent.ac.in"
+                placeholder="name@vitstudent.ac.in or name@vit.ac.in"
               />
             </label>
 

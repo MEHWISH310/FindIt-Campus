@@ -27,8 +27,8 @@ export default function ForgotPassword() {
       <div className="report-card">
         <h1 className="report-heading">Forgot password</h1>
         <p className="verification-note">
-          Enter your @vitstudent.ac.in email and we'll send you a new temporary password. You'll
-          be asked to set a new one after logging in with it.
+          Enter your @vitstudent.ac.in or @vit.ac.in email and we'll send you a new temporary
+          password. You'll be asked to set a new one after logging in with it.
         </p>
 
         {sent ? (
@@ -45,7 +45,7 @@ export default function ForgotPassword() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="mail.20XX@vitstudent.ac.in"
+                placeholder="mail.20XX@vitstudent.ac.in or name@vit.ac.in"
               />
             </label>
 
@@ -58,10 +58,7 @@ export default function ForgotPassword() {
         )}
 
         <p className="verification-note">
-          Remembered it?{' '}
-          <Link to="/login" className="auth-link-accent">
-            Log in
-          </Link>
+          Remembered it? <Link to="/login">Log in</Link>
         </p>
       </div>
     </div>

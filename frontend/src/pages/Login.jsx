@@ -52,7 +52,7 @@ export default function Login() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="mail.20XX@vitstudent.ac.in"
+            placeholder="name@vitstudent.ac.in or name@vit.ac.in"
           />
         </label>
 
@@ -73,10 +73,7 @@ export default function Login() {
         </button>
 
         <p className="verification-note">
-          Forgot your password?{' '}
-          <Link to="/forgot-password" className="auth-link-accent">
-            Reset it
-          </Link>
+          Forgot your password? <Link to="/forgot-password">Reset it</Link>
         </p>
       </form>
     </div>

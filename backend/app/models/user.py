@@ -26,14 +26,18 @@ from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.session import Base
 
-# Only this college's email domain is accepted, everywhere a User is
+# Only these college email domains are accepted, everywhere a User is
 # created -- seed_users.py, /auth/request-access, and any future admin
-# "add user" endpoint.
-ALLOWED_EMAIL_DOMAIN = "vitstudent.ac.in"
+# "add user" endpoint. Kept as a tuple (not a single string) so adding
+# another campus domain later is just adding an entry here.
+ALLOWED_EMAIL_DOMAINS = ("vitstudent.ac.in", "vit.ac.in")
 
 
 def is_college_email(email: str) -> bool:
-    return bool(email) and email.strip().lower().endswith(f"@{ALLOWED_EMAIL_DOMAIN}")
+    if not email:
+        return False
+    email = email.strip().lower()
+    return any(email.endswith(f"@{domain}") for domain in ALLOWED_EMAIL_DOMAINS)
 
 
 class User(Base):

@@ -12,7 +12,7 @@ Either way, the account starts with no password (password_hash null,
 must_set_password true). Full flow:
 
   1. POST /auth/request-access {email, registration_number}
-     - Must be a @vitstudent.ac.in address.
+     - Must be a @vitstudent.ac.in or @vit.ac.in address.
      - If no row exists for the email, creates one (this is what makes
        self-signup possible).
      - If a row exists with no registration_number yet (admin-seeded),
@@ -32,10 +32,11 @@ must_set_password true). Full flow:
 
 Note on identity: registration_number alone isn't proof of anything --
 anyone could type in someone else's. The real verification is the email
-loop: only whoever controls the @vitstudent.ac.in inbox ever sees the
-temp password, so only they can actually log in. registration_number is
-just there to (a) let admin-seeded rows get filled in by the right
-person, and (b) catch someone fat-fingering their own number.
+loop: only whoever controls the @vitstudent.ac.in / @vit.ac.in inbox
+ever sees the temp password, so only they can actually log in.
+registration_number is just there to (a) let admin-seeded rows get
+filled in by the right person, and (b) catch someone fat-fingering their
+own number.
 """
 
 from typing import Optional
@@ -46,7 +47,7 @@ from pydantic import BaseModel
 from uuid import UUID
 
 from app.db.session import get_db
-from app.models.user import User, is_college_email, ALLOWED_EMAIL_DOMAIN
+from app.models.user import User, is_college_email, ALLOWED_EMAIL_DOMAINS
 from app.core.security import (
     hash_password,
     verify_password,
@@ -55,6 +56,10 @@ from app.core.security import (
     decode_access_token,
 )
 from app.core.email import send_email
+
+# Shared phrasing for both "bad domain" error messages below --
+# e.g. "@vitstudent.ac.in or @vit.ac.in".
+_ALLOWED_DOMAINS_TEXT = " or ".join(f"@{d}" for d in ALLOWED_EMAIL_DOMAINS)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -187,7 +192,7 @@ def _issue_temp_password(user: User, db: Session, reason: str) -> None:
 @router.post("/request-access")
 def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db)):
     """
-    Signup / first-time access for a @vitstudent.ac.in email.
+    Signup / first-time access for a @vitstudent.ac.in or @vit.ac.in email.
 
     - If a row already exists for the email (admin-seeded, or a previous
       partial signup) with no registration_number yet, this claims it.
@@ -199,7 +204,7 @@ def request_access(payload: RequestAccessPayload, db: Session = Depends(get_db))
     email = payload.email.strip().lower()
     reg_number = payload.registration_number.strip()
     if not is_college_email(email):
-        raise HTTPException(400, f"Only @{ALLOWED_EMAIL_DOMAIN} email addresses can be used.")
+        raise HTTPException(400, f"Only {_ALLOWED_DOMAINS_TEXT} email addresses can be used.")
     if not reg_number:
         raise HTTPException(400, "Registration number is required.")
 
@@ -237,7 +242,7 @@ def forgot_password(payload: ForgotPasswordPayload, db: Session = Depends(get_db
     own copy, separate from the first-time "Sign up" screen."""
     email = payload.email.strip().lower()
     if not is_college_email(email):
-        raise HTTPException(400, f"Only @{ALLOWED_EMAIL_DOMAIN} email addresses can be used.")
+        raise HTTPException(400, f"Only {_ALLOWED_DOMAINS_TEXT} email addresses can be used.")
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
