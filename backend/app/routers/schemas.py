@@ -137,9 +137,17 @@ class MatchOut(BaseModel):
 
 class ClaimRequest(BaseModel):
     """Submitted by whoever is trying to claim a FOUND item -- they must
-    answer the finder's hidden_question correctly. claimant_contact is
-    optional (e.g. they hand it over in person and just want it logged)."""
+    answer the finder's hidden_question correctly. claimant_name,
+    claimant_registration_number, and claimant_email are all required so
+    admin has a filled-in identity record to check the claimant against
+    at physical handover, on top of the hidden-answer check itself.
+    claimant_registration_number and claimant_email are cross-checked
+    against the logged-in user's own account in verify_claim -- they
+    can't be used to claim as someone else. claimant_contact (a second,
+    optional contact detail) is the only optional field."""
     claimant_name: str
+    claimant_registration_number: str
+    claimant_email: str
     claimant_contact: Optional[str] = None
     hidden_answer: str
     notes: Optional[str] = None
@@ -165,6 +173,19 @@ class CustodyRecordOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CheckAnswerRequest(BaseModel):
+    """Step 1 of the two-step claim form: just the verification-question
+    answer, nothing else. Lets the frontend tell the claimant right away
+    whether they got it right, before asking them to fill in their name,
+    registration number, etc. Doesn't touch match/report state either
+    way -- see check_answer below."""
+    hidden_answer: str
+
+
+class CheckAnswerResponse(BaseModel):
+    correct: bool
 
 
 class ClaimResponse(BaseModel):

@@ -39,6 +39,8 @@ from app.routers.schemas import (
     MatchOut,
     ClaimRequest,
     ClaimResponse,
+    CheckAnswerRequest,
+    CheckAnswerResponse,
     FoundContactOut,
     ClaimantInfoOut,
 )
@@ -317,6 +319,52 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     return saved_matches
 
 
+@router.post("/{match_id}/check-answer", response_model=CheckAnswerResponse)
+async def check_answer(
+    match_id: str,
+    payload: CheckAnswerRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Step 1 of the two-step claim flow: just checks the verification-question
+    answer and reports back correct/incorrect -- nothing is saved, no match
+    state changes either way. This is what lets the claim form ask "answer
+    first, THEN fill in your details" instead of collecting everything
+    upfront only to reject it all on a wrong answer.
+
+    Same ownership check as verify_claim (only the lost report's own
+    reporter can even attempt this) -- otherwise this would just be an
+    easier oracle to guess someone else's hidden_answer against, without
+    even the friction of typing in a name/reg number first.
+    """
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+
+    if match.status in (MatchStatus.VERIFIED, MatchStatus.CONFIRMED):
+        raise HTTPException(400, "This match has already been verified and is awaiting/complete pickup.")
+    if match.status == MatchStatus.REJECTED:
+        raise HTTPException(400, "This match was rejected and can no longer be claimed.")
+
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    if not found_report or not lost_report:
+        raise HTTPException(404, "One of the reports behind this match no longer exists")
+
+    if lost_report.reporter_id != user.id:
+        raise HTTPException(
+            403,
+            "Only the person who filed the lost report can claim this match.",
+        )
+
+    if not found_report.hidden_answer:
+        raise HTTPException(400, "This found report has no verification question set up")
+
+    is_correct = payload.hidden_answer.strip().lower() == found_report.hidden_answer.strip().lower()
+    return CheckAnswerResponse(correct=is_correct)
+
+
 @router.post("/{match_id}/verify", response_model=ClaimResponse)
 async def verify_claim(
     match_id: str,
@@ -376,6 +424,19 @@ async def verify_claim(
             "Only the person who filed the lost report can claim this match.",
         )
 
+    # claimant_email and claimant_registration_number are shown pre-filled
+    # in the UI from the logged-in account, but we still check them against
+    # that account server-side rather than trusting the submitted values --
+    # same reasoning as the reporter_id check above, just one level more
+    # paranoid, since these two are meant to double as the identity record
+    # admin checks the claimant against at physical handover.
+    if payload.claimant_email.strip().lower() != user.email.strip().lower():
+        raise HTTPException(400, "Email doesn't match your logged-in account.")
+    if not user.registration_number or (
+        payload.claimant_registration_number.strip().upper() != user.registration_number.strip().upper()
+    ):
+        raise HTTPException(400, "Registration number doesn't match our records for your account.")
+
     if not found_report.hidden_answer:
         raise HTTPException(400, "This found report has no verification question set up")
 
@@ -398,6 +459,7 @@ async def verify_claim(
     match.pending_claimant_name = payload.claimant_name
     match.pending_claimant_contact = payload.claimant_contact
     match.pending_claimant_notes = payload.notes
+    match.pending_claimant_registration_number = payload.claimant_registration_number
     db.commit()
     db.refresh(match)
 

@@ -144,11 +144,22 @@ export function escalateStale() {
   return request('/reports/escalate-stale', { method: 'POST' });
 }
 
+/** POST /matches/{match_id}/check-answer : step 1 of the two-step claim
+ * form -- just checks the verification-question answer, no state change
+ * either way. Returns { correct }. */
+export function checkClaimAnswer(matchId, hiddenAnswer) {
+  return request(`/matches/${matchId}/check-answer`, {
+    method: 'POST',
+    body: JSON.stringify({ hidden_answer: hiddenAnswer }),
+  });
+}
+
 /**
  * POST /matches/{match_id}/verify : submit a claim attempt (claimant_name,
- * claimant_contact, hidden_answer, notes). Returns { verified, message,
- * match, custody_record }. A wrong answer comes back as verified: false,
- * not a thrown error, so the form can show it inline and let them retry.
+ * claimant_registration_number, claimant_email, claimant_contact,
+ * hidden_answer, notes). Returns { verified, message, match,
+ * custody_record }. A wrong answer comes back as verified: false, not a
+ * thrown error, so the form can show it inline and let them retry.
  * A correct answer resolves both reports, so we fire the reports-changed
  * event to bump counts back down (see Header.jsx).
  */

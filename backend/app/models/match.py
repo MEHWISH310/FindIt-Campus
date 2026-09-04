@@ -65,6 +65,12 @@ class Match(Base):
     pending_claimant_name = Column(String(200), nullable=True)
     pending_claimant_contact = Column(String(200), nullable=True)
     pending_claimant_notes = Column(String(500), nullable=True)
+    # Registration number the claimant typed in on the claim form -- an
+    # extra cross-check alongside the hidden_answer, similar in spirit to
+    # the registration_number check in /auth/request-access. Verified
+    # against the logged-in user's own User.registration_number in
+    # verify_claim before this even gets set.
+    pending_claimant_registration_number = Column(String(50), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
