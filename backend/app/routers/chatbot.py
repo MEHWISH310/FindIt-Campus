@@ -15,12 +15,7 @@ from google import genai
 from google.genai import types
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
-<<<<<<< Updated upstream
-from typing import List, Literal
-from fastapi import APIRouter, Header
-=======
 from typing import List, Literal, Optional
->>>>>>> Stashed changes
 
 from app.core.config import settings
 from app.models.user import User
@@ -144,15 +139,6 @@ class ChatResponse(BaseModel):
     history: List[ChatMessage]
 
 
-<<<<<<< Updated upstream
-async def _run_tool(name: str, tool_input: dict, auth_header: str | None) -> dict:
-    headers = {"Authorization": auth_header} if auth_header else {}
-    async with httpx.AsyncClient(base_url=INTERNAL_BASE_URL, timeout=30) as client_http:
-        if name == "create_report":
-            resp = await client_http.post("/reports/", json=tool_input, headers=headers)
-        elif name == "find_matches":
-            resp = await client_http.post(f"/matches/find/{tool_input['report_id']}", headers=headers)
-=======
 async def _get_dashboard_summary(client_http: httpx.AsyncClient) -> dict:
     """
     Builds a dashboard-style summary from data that already exists via
@@ -218,7 +204,6 @@ async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> 
                 return resp.json()
             except Exception:
                 return {"error": resp.text}
->>>>>>> Stashed changes
         else:
             return {"error": f"unknown tool {name}"}
 
@@ -226,10 +211,8 @@ async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> 
 def _to_gemini_role(role: str) -> str:
     return "model" if role == "assistant" else "user"
 
+
 @router.post("/message", response_model=ChatResponse)
-<<<<<<< Updated upstream
-async def chat(req: ChatRequest, authorization: str | None = Header(default=None)):
-=======
 async def chat(
     req: ChatRequest,
     authorization: Optional[str] = Header(None),
@@ -240,7 +223,6 @@ async def chat(
     system_prompt = BASE_SYSTEM_PROMPT + (ADMIN_SYSTEM_PROMPT_ADDITION if is_admin else "")
     declarations = USER_TOOLS + (ADMIN_TOOLS if is_admin else [])
 
->>>>>>> Stashed changes
     contents = [
         types.Content(role=_to_gemini_role(m.role), parts=[types.Part(text=m.content)])
         for m in req.history
@@ -283,13 +265,10 @@ async def chat(
 
         function_response_parts = []
         for fc in function_calls:
-<<<<<<< Updated upstream
-=======
             # Belt-and-braces: even if an admin tool somehow got called for
             # a non-admin (it shouldn't, since it's never offered to the
             # model), the underlying endpoint itself is still admin-gated
             # via require_admin and will 403 -- this isn't the only guard.
->>>>>>> Stashed changes
             result = await _run_tool(fc.name, dict(fc.args), authorization)
             function_response_parts.append(
                 types.Part(function_response=types.FunctionResponse(
