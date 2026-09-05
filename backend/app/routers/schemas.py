@@ -6,11 +6,32 @@ want `hidden_answer` to leak out in a response schema, even though it's
 a real DB column -- separating the two makes that an explicit choice.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+
+def _assume_utc(v):
+    """
+    The DB columns backing these fields (created_at, item_datetime,
+    handover_datetime, verified_at -- see app/models/report.py and
+    app/models/custody.py) are plain `DateTime`, populated via
+    `datetime.utcnow()`. That gives a real UTC instant, but as a *naive*
+    Python datetime -- no timezone attached. Pydantic then serializes it
+    to JSON with no "Z"/"+00:00" suffix (e.g. "2026-09-05T14:20:00"),
+    and the frontend's `new Date(...)` interprets a suffix-less string as
+    LOCAL time, not UTC -- silently shifting every timestamp by the
+    browser's UTC offset (5.5 hours for IST).
+
+    This tags the value as UTC before it leaves the API, without touching
+    how it's stored -- so the JSON always carries an explicit offset and
+    the frontend parses it correctly.
+    """
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
 
 
 class ReportCreate(BaseModel):
@@ -92,6 +113,11 @@ class ReportOut(BaseModel):
             return v.lower() == "true"
         return bool(v)
 
+    @field_validator("item_datetime", "created_at", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
+
     class Config:
         from_attributes = True
 
@@ -112,6 +138,11 @@ class ClaimantInfoOut(BaseModel):
     claimant_name: str
     claimant_contact: Optional[str]
     handover_datetime: datetime
+
+    @field_validator("handover_datetime", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
 
 
 class MatchOut(BaseModel):
@@ -171,6 +202,11 @@ class CustodyRecordOut(BaseModel):
             return v.lower() == "true"
         return bool(v)
 
+    @field_validator("handover_datetime", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
+
     class Config:
         from_attributes = True
 
@@ -201,6 +237,11 @@ class MyClaimOut(BaseModel):
     handover_datetime: Optional[datetime] = None
     collection_point: Optional[str] = None
 
+    @field_validator("handover_datetime", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
+
 
 class ClaimResponse(BaseModel):
     verified: bool
@@ -229,6 +270,11 @@ class PendingPickupOut(BaseModel):
     finder: Optional[ReporterInfoOut] = None
     owner: Optional[ReporterInfoOut] = None
     verified_at: datetime
+
+    @field_validator("verified_at", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
 
     class Config:
         from_attributes = True
