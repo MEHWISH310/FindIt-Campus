@@ -1900,6 +1900,81 @@ button {
   color: var(--text-muted);
 }
 
+/* Answer field flagged as leaking into the public description. */
+.input-invalid,
+.input-invalid:focus {
+  border-color: var(--lost);
+}
+
+/* "Preview what a claimant sees" toggle + panel inside the verification block. */
+.preview-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.preview-toggle:hover {
+  text-decoration: underline;
+}
+
+.claimant-preview {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  background: var(--surface);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.claimant-preview p {
+  margin: 0;
+}
+
+.claimant-preview-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.claimant-preview-title {
+  font-weight: 700;
+}
+
+.claimant-preview-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+
+.claimant-preview-meta div {
+  display: flex;
+  gap: 6px;
+}
+
+.claimant-preview-meta dt {
+  color: var(--text-muted);
+}
+
+.claimant-preview-meta dd {
+  margin: 0;
+}
+
+.claimant-preview-hidden {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
 /* Emphasised inline link on the auth screens -- green + bold so the
    "Request access" call-to-action stands out from the muted note text. */
 .auth-link-accent {
@@ -1939,6 +2014,19 @@ button {
   font-size: 0.78rem;
   color: var(--text-muted);
   line-height: 1.4;
+}
+
+/* Highlighted guidance the reporter really shouldn't skim past -- e.g.
+   "this text is public" / "keep the answer out of the description". */
+.field-callout {
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
 }
 
 .photo-preview-grid {
@@ -2192,6 +2280,17 @@ button {
 .signals {
   font-size: 0.62rem;
   color: var(--text-muted);
+  text-align: center;
+  padding: 0 6px;
+}
+
+/* The match id, shown to the report owner so they can quote it to the
+   admin desk if online verification failed. */
+.match-ref {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+  word-break: break-all;
   text-align: center;
   padding: 0 6px;
 }
@@ -2526,6 +2625,25 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+/* Collapsible "verify a claim in person" panel on the admin page. */
+.admin-verify {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 14px 18px;
+  margin-bottom: 24px;
+}
+
+.admin-verify > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.admin-verify-form {
+  margin-top: 16px;
 }
 
 .custody-table {

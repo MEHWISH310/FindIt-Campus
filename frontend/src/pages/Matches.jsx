@@ -17,6 +17,17 @@ function isVerified(match) {
   return match.status === 'VERIFIED' || match.status === 'verified';
 }
 
+// The percentage we show for a match: the calibrated probability when we
+// have it, otherwise the raw score. null when neither is set.
+function matchPercent(match) {
+  if (match.match_probability != null) return Math.round(match.match_probability * 100);
+  if (match.raw_score != null) return Math.round(match.raw_score * 100);
+  return null;
+}
+
+// Ranked AI matches are only worth showing once they clear 50%.
+const MIN_MATCH_PERCENT = 50;
+
 // Small red-asterisk marker for required-field labels.
 function Required() {
   return <span style={{ color: '#ef4444' }}> *</span>;
@@ -49,6 +60,7 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
   const [hiddenAnswer, setHiddenAnswer] = useState('');
   const [checking, setChecking] = useState(false);
   const [answerError, setAnswerError] = useState(null);
+  const [locked, setLocked] = useState(false); // ran out of attempts -> admin desk
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { verified, message } | null
   const [error, setError] = useState(null);
@@ -62,7 +74,8 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
       if (res.correct) {
         setStep('details');
       } else {
-        setAnswerError('Wrong answer. You can try again.');
+        setAnswerError(res.message || 'Wrong answer. You can try again.');
+        if (res.locked) setLocked(true);
       }
     } catch (err) {
       setAnswerError(err instanceof ApiError ? err.message : 'Could not check the answer.');
@@ -94,6 +107,7 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
         // form for an answer that no longer works.
         setStep('answer');
         setAnswerError(res.message || 'That answer no longer matches. Please try again.');
+        if (res.locked) setLocked(true);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not submit the claim.');
@@ -114,6 +128,22 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
           <button type="button" className="claim-form-cancel" onClick={onClose}>
             Close
           </button>
+        </div>
+      ) : locked ? (
+        <div className="claim-form">
+          <p className="claim-form-error">
+            {answerError ||
+              "Verification failed -- you've used all your attempts."}
+          </p>
+          <p className="claim-form-question">
+            If this item really is yours, take your ID to the lost &amp; found
+            admin desk. An admin can verify you in person and release it.
+          </p>
+          <div className="claim-form-actions">
+            <button type="button" className="claim-form-cancel" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
       ) : step === 'answer' ? (
         <form className="claim-form" onSubmit={handleCheckAnswer}>
@@ -404,6 +434,11 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
         {match.used_signals?.length > 0 && (
           <span className="signals">{match.used_signals.join(', ')}</span>
         )}
+        {isSourceOwner && (
+          <span className="match-ref mono" title="Quote this to the admin desk if you need in-person verification">
+            ref {match.id}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -487,15 +522,25 @@ export default function Matches() {
         <p className="matches-status status-pulse">Running the matching engine…</p>
       )}
 
-      {matches && matches.length === 0 && (
-        <p className="matches-status">
-          No candidate matches yet. Check back once more reports come in.
-        </p>
-      )}
-
-      {matches && matches.length > 0 && (() => {
+      {matches && (() => {
         const disambiguationCluster = matches.filter(isNeedsReview);
-        const normalMatches = matches.filter((m) => !isNeedsReview(m) && !isRejected(m));
+        // Ranked AI matches: drop rejected, drop the disambiguation cluster,
+        // and only keep the ones scoring above 50%.
+        const normalMatches = matches.filter(
+          (m) =>
+            !isNeedsReview(m) &&
+            !isRejected(m) &&
+            (matchPercent(m) ?? 0) > MIN_MATCH_PERCENT
+        );
+
+        if (disambiguationCluster.length === 0 && normalMatches.length === 0) {
+          return (
+            <p className="matches-status">
+              No candidate matches yet. Check back once more reports come in.
+            </p>
+          );
+        }
+
         return (
           <>
             {disambiguationCluster.length > 0 && (

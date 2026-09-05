@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { login as loginApi, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
@@ -11,7 +11,6 @@ export default function Login() {
   const [error, setError] = useState(null);
   const { login } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -25,8 +24,9 @@ export default function Login() {
         navigate('/set-password', { replace: true });
         return;
       }
-      const redirectTo = location.state?.from || '/';
-      navigate(redirectTo, { replace: true });
+      // Always land on the landing page after login, regardless of which
+      // protected page bounced them here.
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not log in.');
     } finally {
