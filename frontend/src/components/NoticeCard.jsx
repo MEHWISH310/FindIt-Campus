@@ -43,14 +43,21 @@ export default function NoticeCard({
   const photosRedacted = report.photos_redacted && thumbnail;
   const isOwner = Boolean(currentUserId) && report.reporter_id === currentUserId;
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
-  async function handleDelete() {
-    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+  async function confirmDelete() {
+    setDeleting(true);
+    setDeleteError(null);
     try {
       await deleteReport(report.id, token);
+      setConfirmOpen(false);
       onDeleted?.(report.id);
     } catch (err) {
-      alert(err.message || 'Could not delete report.');
+      setDeleteError(err.message || 'Could not delete report.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -150,12 +157,51 @@ export default function NoticeCard({
             Find matches →
           </button>
         )}
-        {isOwner && (
-          <button type="button" className="notice-footer-link notice-footer-link--danger" onClick={handleDelete}>
+        {/* No delete once resolved -- the card is now part of the handover
+            record the admin audits, so it must stay put. */}
+        {isOwner && !isResolved && (
+          <button
+            type="button"
+            className="notice-footer-link notice-footer-link--danger"
+            onClick={() => {
+              setDeleteError(null);
+              setConfirmOpen(true);
+            }}
+          >
             Delete
           </button>
         )}
       </div>
+
+      {confirmOpen && (
+        <Modal onClose={() => !deleting && setConfirmOpen(false)} labelledBy="delete-confirm-heading">
+          <h2 id="delete-confirm-heading" className="modal-heading">
+            Delete this report?
+          </h2>
+          <p className="modal-text">
+            “{report.title}” will be removed for good. This can’t be undone.
+          </p>
+          {deleteError && <p className="form-error">{deleteError}</p>}
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="claim-form-cancel"
+              onClick={() => setConfirmOpen(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="submit-btn submit-btn--danger"
+              onClick={confirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </Modal>
+      )}
       {primaryAction && (
         <button type="button" className="notice-primary-action" onClick={primaryAction.onClick}>
           {primaryAction.label}

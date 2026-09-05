@@ -203,6 +203,15 @@ def delete_report(
     if report.reporter_id != user.id:
         raise HTTPException(403, "You can only delete your own reports")
 
+    # A resolved report has been through a handover and has a CustodyRecord
+    # attached to its Match -- that's the audit trail an admin relies on, so
+    # it must not be deletable from here. (The frontend also hides the
+    # Delete button once a card is resolved; this is the backstop.)
+    if report.status == ReportStatus.RESOLVED:
+        raise HTTPException(
+            409, "This report has already been resolved and is part of the handover record."
+        )
+
     db.query(Match).filter(
         (Match.lost_report_id == report.id) | (Match.found_report_id == report.id)
     ).delete(synchronize_session=False)

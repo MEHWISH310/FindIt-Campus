@@ -1236,6 +1236,15 @@ button {
   cursor: default;
 }
 
+/* Filter is active -- the button now reads "Show all found" and stays lit
+   so it's clear the grid is showing a filtered subset. */
+.escalation-check-btn--on,
+.escalation-check-btn--on:hover:not(:disabled) {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
 .dashboard-title--lost {
   color: var(--lost);
 }
@@ -1262,6 +1271,14 @@ button {
 
 .dashboard-status--error {
   color: var(--lost);
+}
+
+/* Sits just above the grid while the escalation filter is on, so a short
+   list of cards doesn't look like the whole dashboard. */
+.dashboard-status--filter {
+  padding: 0 0 20px;
+  color: var(--warn);
+  font-size: 0.85rem;
 }
 
 /* --- Profile / "My account" page: pages/Profile.jsx ---------------- */
@@ -2014,6 +2031,13 @@ button {
 .submit-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Destructive confirm button (e.g. the delete-report modal) -- same pill
+   shape, red fill instead of the accent. */
+.submit-btn--danger {
+  background: var(--lost);
+  color: #fff;
 }
 
 @media (max-width: 640px) {
