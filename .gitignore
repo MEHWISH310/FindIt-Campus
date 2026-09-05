@@ -6,3 +6,5 @@ node_modules/
 .env
 *.egg-info/
 uploads/
+.DS_Store
+*.code-workspace
