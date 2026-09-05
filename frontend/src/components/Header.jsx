@@ -20,10 +20,10 @@ export default function Header() {
     Promise.all([
       listReports('lost'),
       listReports('found'),
-      // Claimed and Pickups are both admin-only nav items now -- no point
-      // fetching either count for a non-admin, since they'll never see
-      // the badge (or the tab itself) anyway.
-      user?.is_admin ? listCustodyRecords() : Promise.resolve(null),
+      // /custody/ (claimed) is open to everyone now -- both admin and
+      // non-admin Claimed tabs read from it, so fetch it for everyone.
+      // Pickups stays admin-only (non-admins never see that tab).
+      listCustodyRecords(),
       user?.is_admin ? listPendingPickups() : Promise.resolve(null),
     ])
       .then(([lost, found, claimed, pickups]) => {
