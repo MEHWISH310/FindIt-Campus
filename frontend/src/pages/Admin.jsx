@@ -34,16 +34,18 @@ function AdminVerifyForm({ onVerified }) {
     e.preventDefault();
     setError(null);
     const matchId = form.match_id.trim();
-    if (!matchId || !form.claimant_name.trim()) {
-      setError('Match ref and claimant name are required.');
+    const registrationNumber = form.claimant_registration_number.trim();
+    const email = form.claimant_email.trim();
+    if (!matchId || !form.claimant_name.trim() || !registrationNumber || !email) {
+      setError('Match ref, claimant name, registration number, and email are required.');
       return;
     }
     setSubmitting(true);
     try {
       await adminVerifyClaim(matchId, {
         claimant_name: form.claimant_name.trim(),
-        claimant_registration_number: form.claimant_registration_number.trim() || null,
-        claimant_email: form.claimant_email.trim() || null,
+        claimant_registration_number: registrationNumber.toUpperCase(),
+        claimant_email: email,
         claimant_contact: form.claimant_contact.trim() || null,
         notes: form.notes.trim() || null,
       });
@@ -80,19 +82,21 @@ function AdminVerifyForm({ onVerified }) {
         </label>
         <div className="field-row">
           <label className="field">
-            <span>Registration number</span>
+            <span>Registration number *</span>
             <input
               value={form.claimant_registration_number}
               onChange={(e) => set('claimant_registration_number', e.target.value)}
               placeholder="23BCE0000"
+              required
             />
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>Email *</span>
             <input
               type="email"
               value={form.claimant_email}
               onChange={(e) => set('claimant_email', e.target.value)}
+              required
             />
           </label>
           <label className="field">
@@ -233,7 +237,7 @@ export default function Admin() {
             <tbody>
               {pickups.map((p) => (
                 <tr key={p.match_id}>
-                  <td className="mono" title={p.match_id}>{p.match_id.slice(0, 8)}</td>
+                  <td className="mono">{p.match_id}</td>
                   <td>
                     {p.item_title}
                     {p.category ? ` (${p.category})` : ''}

@@ -257,10 +257,15 @@ class AdminVerifyRequest(BaseModel):
     """An admin completing verification on a student's behalf (they failed
     online / got locked out, but showed proof in person). The admin types
     the claimant's identity details in for the record; no hidden answer is
-    needed -- the admin IS the verification here."""
+    needed -- the admin IS the verification here.
+
+    claimant_registration_number and claimant_email are required (not just
+    on the frontend) -- an in-person verification is only as good as the
+    identity record it leaves behind, so both must be captured here just
+    like the online claim form already requires them (see ClaimRequest)."""
     claimant_name: str
-    claimant_registration_number: Optional[str] = None
-    claimant_email: Optional[str] = None
+    claimant_registration_number: str
+    claimant_email: str
     claimant_contact: Optional[str] = None
     notes: Optional[str] = None
 
