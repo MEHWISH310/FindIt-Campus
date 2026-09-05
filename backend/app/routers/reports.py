@@ -15,7 +15,7 @@ embedding is filled in moments later.
 import asyncio
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -33,7 +33,15 @@ from app.models.report import (
     ESCALATION_DAYS_THRESHOLD,
 )
 from app.models.match import Match
-from app.routers.schemas import ReportCreate, ReportOut, ReporterInfoOut
+from app.matching.leak_check import answer_leaks
+from app.matching.verification_guard import llm_leak_check
+from app.routers.schemas import (
+    ReportCreate,
+    ReportOut,
+    ReporterInfoOut,
+    VerificationCheckRequest,
+    VerificationCheckResponse,
+)
 from app.matching.embeddings import encode_text, encode_images
 from app.matching.redaction import redact_photo, originals_dir
 from app.realtime import sio
@@ -91,6 +99,48 @@ async def create_report(
             "correct answer means nobody could ever pass verify_claim.",
         )
 
+    # A verification answer that's already sitting in the public text makes
+    # the whole check pointless -- anyone browsing could pass it. Reject it
+    # here so the finder has to pick something only the owner would know (or
+    # make the description less specific).
+    if payload.report_type == ReportType.FOUND.value and answer_leaks(
+        payload.hidden_answer,
+        payload.title,
+        payload.description,
+        payload.color,
+        payload.brand,
+        payload.category,
+        payload.location_name,
+    ):
+        raise HTTPException(
+            422,
+            "Your verification answer is visible in the public description. "
+            "Pick something only the true owner would know, or make the "
+            "description less specific.",
+        )
+
+    # FOUND: the item was already in the finder's hands when they filed, so
+    # "when" is just now -- we don't ask. LOST: the owner picks the time,
+    # but it can't be in the future or more than two weeks ago (older
+    # losses are past the matching/escalation window anyway).
+    now = datetime.utcnow()
+    if payload.report_type == ReportType.FOUND.value:
+        item_datetime = now
+    else:
+        if payload.item_datetime is None:
+            raise HTTPException(400, "Tell us roughly when you lost it.")
+        item_datetime = payload.item_datetime
+        if item_datetime.tzinfo is not None:
+            item_datetime = item_datetime.astimezone(timezone.utc).replace(tzinfo=None)
+        if item_datetime > now + timedelta(minutes=5):
+            raise HTTPException(422, "The date you lost it can't be in the future.")
+        if item_datetime < now - timedelta(days=14):
+            raise HTTPException(
+                422,
+                "Please report items lost within the last two weeks. For an "
+                "older loss, contact the lost & found desk.",
+            )
+
     report = Report(
         reporter_id=user.id,
         report_type=payload.report_type,
@@ -102,7 +152,7 @@ async def create_report(
         location_name=payload.location_name,
         latitude=payload.latitude,
         longitude=payload.longitude,
-        item_datetime=payload.item_datetime,
+        item_datetime=item_datetime,
         hidden_question=payload.hidden_question,
         hidden_answer=payload.hidden_answer,
         collection_point=payload.collection_point,
@@ -140,6 +190,59 @@ async def create_report(
     )
 
     return _serialize_report(report, user, db)
+
+
+@router.post("/check-verification", response_model=VerificationCheckResponse)
+async def check_verification_question(payload: VerificationCheckRequest):
+    """
+    Advisory pre-submit check for a FOUND report's verification Q&A: does the
+    answer leak from what a claimant can already see? Runs the cheap string
+    heuristic first, then an LLM pass for the semantic cases it misses.
+
+    Advisory only -- the frontend shows this as an overridable warning while
+    the finder types. The hard gate is the same string check inside
+    POST /reports/ (the LLM result never blocks a submission).
+    """
+    public_text = " ".join(
+        p
+        for p in (
+            payload.title,
+            payload.description,
+            payload.color,
+            payload.brand,
+            payload.category,
+            payload.location_name,
+        )
+        if p
+    )
+
+    if answer_leaks(
+        payload.hidden_answer,
+        payload.title,
+        payload.description,
+        payload.color,
+        payload.brand,
+        payload.category,
+        payload.location_name,
+    ):
+        return VerificationCheckResponse(
+            leaked=True,
+            reason="The answer appears in your public description.",
+        )
+
+    result = await llm_leak_check(
+        public_text=public_text,
+        question=payload.hidden_question or "",
+        answer=payload.hidden_answer or "",
+    )
+    return VerificationCheckResponse(
+        leaked=result["leaked"],
+        reason=result["reason"] or (
+            "A claimant could likely answer this from the public description."
+            if result["leaked"]
+            else ""
+        ),
+    )
 
 
 @router.get("/", response_model=List[ReportOut])

@@ -44,7 +44,10 @@ class ReportCreate(BaseModel):
     location_name: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    item_datetime: datetime
+    # LOST reports only -- when the owner lost it (must be within the last
+    # week; validated in create_report). FOUND reports ignore this and use
+    # the submission time.
+    item_datetime: Optional[datetime] = None
     # Only relevant when report_type == "found": the question a claimant
     # must answer before contact info is revealed.
     hidden_question: Optional[str] = None
@@ -53,6 +56,24 @@ class ReportCreate(BaseModel):
     # handed the item to admin, e.g. "Main Gate security desk". This is
     # what the owner is told once verified -- see ReportOut.collection_point.
     collection_point: Optional[str] = None
+
+
+class VerificationCheckRequest(BaseModel):
+    """Advisory pre-submit check payload -- everything a claimant would see,
+    plus the proposed verification question + answer."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    color: Optional[str] = None
+    brand: Optional[str] = None
+    location_name: Optional[str] = None
+    hidden_question: Optional[str] = None
+    hidden_answer: Optional[str] = None
+
+
+class VerificationCheckResponse(BaseModel):
+    leaked: bool
+    reason: str = ""
 
 
 class ReporterInfoOut(BaseModel):
@@ -222,6 +243,26 @@ class CheckAnswerRequest(BaseModel):
 
 class CheckAnswerResponse(BaseModel):
     correct: bool
+    # Set once the claimant has burned all their attempts (see
+    # MAX_CLAIM_ATTEMPTS in matches.py) -- the frontend then stops offering
+    # a retry and points them at the admin desk instead.
+    locked: bool = False
+    attempts_left: Optional[int] = None
+    # Human-readable outcome for a wrong/locked answer (the frontend shows
+    # this verbatim). None on a correct answer.
+    message: Optional[str] = None
+
+
+class AdminVerifyRequest(BaseModel):
+    """An admin completing verification on a student's behalf (they failed
+    online / got locked out, but showed proof in person). The admin types
+    the claimant's identity details in for the record; no hidden answer is
+    needed -- the admin IS the verification here."""
+    claimant_name: str
+    claimant_registration_number: Optional[str] = None
+    claimant_email: Optional[str] = None
+    claimant_contact: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class MyClaimOut(BaseModel):
@@ -252,6 +293,10 @@ class ClaimResponse(BaseModel):
     # physically collect the item from admin. Mirrors the found report's
     # collection_point so the frontend doesn't need a second fetch.
     collection_point: Optional[str] = None
+    # True once all attempts are used up -- online claiming is closed for
+    # this match and the claimant must verify in person with an admin.
+    locked: bool = False
+    attempts_left: Optional[int] = None
 
 
 class PendingPickupOut(BaseModel):

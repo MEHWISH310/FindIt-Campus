@@ -95,6 +95,19 @@ export function getReport(reportId) {
   return request(`/reports/${reportId}`);
 }
 
+/**
+ * POST /reports/check-verification : advisory check for a found report's
+ * verification Q&A -- does the answer leak from the public fields? Returns
+ * { leaked, reason }. Used by ReportForm to warn the finder while they
+ * type; the hard gate is server-side in createReport.
+ */
+export function checkVerificationQuestion(payload) {
+  return request('/reports/check-verification', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** POST /matches/find/{report_id} : run the AI matching pipeline for a report. */
 export function findMatches(reportId) {
   return request(`/matches/find/${reportId}`, { method: 'POST' });
@@ -314,4 +327,17 @@ export async function confirmHandover(matchId) {
   const result = await request(`/custody/admin/${matchId}/handover`, { method: 'POST' });
   notifyReportsChanged();
   return result;
+}
+
+/** POST /custody/admin/{match_id}/verify — admin completes verification on a
+ * claimant's behalf (they failed online / got locked out but proved
+ * ownership in person). Moves the match to VERIFIED and into the pickup
+ * queue; the admin then hands it over with confirmHandover. Payload:
+ * { claimant_name, claimant_registration_number?, claimant_email?,
+ *   claimant_contact?, notes? }. Returns the new pending-pickup row. */
+export function adminVerifyClaim(matchId, payload) {
+  return request(`/custody/admin/${matchId}/verify`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
