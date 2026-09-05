@@ -249,6 +249,13 @@ export function changePassword(oldPassword, newPassword) {
   });
 }
 
+/**
+ * DELETE /reports/{report_id} : lets a reporter delete their own report.
+ * Fires the reports-changed event on success so the Header's Lost/Found
+ * counts drop immediately, the same way createReport/claimMatch/
+ * confirmHandover already do -- without this, the header only reflects
+ * the deletion after a full page reload re-runs its count fetch.
+ */
 export async function deleteReport(reportId, token) {
   const res = await fetch(`${API_BASE}/reports/${reportId}`, {
     method: 'DELETE',
@@ -258,7 +265,9 @@ export async function deleteReport(reportId, token) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(body.detail || 'Could not delete report.');
   }
-  return res.json();
+  const result = await res.json();
+  notifyReportsChanged();
+  return result;
 }
 
 /** GET /auth/me */
