@@ -73,6 +73,19 @@ CLAIM_LOCKED_MESSAGE = (
 # disambiguation question").
 DISAMBIGUATION_MARGIN = 0.05
 
+# Disambiguation is only meaningful when the candidates being compared are
+# actually plausible matches -- being "close to each other" isn't enough
+# on its own. Without this floor, two totally unrelated weak candidates
+# (e.g. a lost water bottle and a found set of keys, both scoring ~20%
+# just because their embeddings are within DISAMBIGUATION_MARGIN of one
+# another) get shown to the user as "which one is yours?", which is both
+# wrong and confusing. This must match the frontend's MIN_MATCH_PERCENT
+# (Matches.jsx) so a candidate that clears disambiguation is guaranteed to
+# still be visible once resolved -- otherwise "This one" can pick a match
+# that then gets hidden by the frontend's own display threshold, leaving
+# the user staring at "No candidate matches yet" right after choosing.
+MIN_DISAMBIGUATION_SCORE = 0.5
+
 # A raw_score at or above this is worth a real-time "match found" ping --
 # below this it's a weak candidate that would just be noise in a notification.
 NOTIFY_SCORE_THRESHOLD = 0.6
@@ -224,8 +237,19 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     # Cluster every candidate within DISAMBIGUATION_MARGIN of the TOP score
     # (not just top-1 vs top-2) -- so a clear #1 with a distant #3/#4/#5
     # doesn't drag the whole top-5 batch into "needs review".
-    cluster_indices = competing_cluster([result["score"] for _, result in scored], DISAMBIGUATION_MARGIN)
-    competing_ids = {scored[i][0].id for i in cluster_indices}
+    #
+    # Gated on the top score actually clearing MIN_DISAMBIGUATION_SCORE
+    # first: being "close together" only matters among candidates that are
+    # plausible matches to begin with. Two weak, unrelated candidates that
+    # happen to score similarly low should never be presented as a
+    # forced-choice -- the honest answer there is "no good match yet", not
+    # "pick one of these".
+    top_score = scored[0][1]["score"] if scored else 0.0
+    if top_score >= MIN_DISAMBIGUATION_SCORE:
+        cluster_indices = competing_cluster([result["score"] for _, result in scored], DISAMBIGUATION_MARGIN)
+        competing_ids = {scored[i][0].id for i in cluster_indices}
+    else:
+        competing_ids = set()
     needs_disambiguation = len(competing_ids) >= 2
 
     # Dedupe against matches already saved for this report (from an
