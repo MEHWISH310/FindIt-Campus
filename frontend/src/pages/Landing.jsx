@@ -62,18 +62,18 @@ function Deco({ kind, className }) {
 const STEPS = [
   {
     n: '01',
-    title: 'Pin a notice',
-    body: 'Describe what you lost or found in a sentence, add a photo if you have one, and drop the spot on campus where it happened.',
+    title: 'File a notice',
+    body: 'Describe what you lost or found, add a photo, and mark the spot and time. If you found it, you also set a secret question only the true owner could answer.',
   },
   {
     n: '02',
-    title: 'The engine matches',
-    body: 'Every new notice is compared against all open notices of the opposite kind, with meaning, image, distance, and time gap fused into one calibrated score.',
+    title: 'See your matches',
+    body: 'You’re notified when a likely match shows up. Open your notice to see the ranked candidates, and claim the right one by answering the secret question the finder set.',
   },
   {
     n: '03',
-    title: 'Verify and reunite',
-    body: 'The owner answers a hidden verification question. Only on a correct answer are contact details released and the handover written to the ledger.',
+    title: 'Collect it',
+    body: 'On a correct answer you’re told which campus desk to collect from. Staff there confirm your claim, hand the item over, and record the handover.',
   },
 ];
 
@@ -220,9 +220,9 @@ export default function Landing() {
           <p className="landing-eyebrow mono">Campus lost &amp; found, AI matched</p>
           <h1 className="landing-title">Somebody found what you lost.</h1>
           <p className="landing-sub">
-            Pin a notice for what you lost or found. The matching engine compares
-            descriptions, photos, location, and time to find the other half of
-            the story, with no scrolling through a noticeboard required.
+            Drop a quick notice for whatever you lost or found. The engine reads
+            the words, the photo, the place and the time, and finds the other
+            half of the story. No noticeboard, no group-chat begging.
           </p>
           <div className="landing-ctas">
             <Link to="/report/lost" className="cta cta--lost">
