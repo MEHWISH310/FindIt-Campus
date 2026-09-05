@@ -215,6 +215,11 @@ class CustodyRecordOut(BaseModel):
     handover_datetime: datetime
     notes: Optional[str]
     identity_verified: bool = False
+    # Only populated by /custody/mine (see list_my_custody_records) -- pulled
+    # from the found report via Match, since CustodyRecord itself doesn't
+    # store this column. Null on /custody/ (admin) and /custody/{id}, which
+    # build straight from the ORM row via from_attributes and never set it.
+    collection_point: Optional[str] = None
 
     @field_validator("identity_verified", mode="before")
     @classmethod

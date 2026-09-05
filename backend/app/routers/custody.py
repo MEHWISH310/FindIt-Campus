@@ -33,13 +33,46 @@ from app.realtime import sio
 router = APIRouter(prefix="/custody", tags=["custody"])
 
 
+def _custody_out_with_collection_point(record: CustodyRecord, collection_point: str | None) -> CustodyRecordOut:
+    """Shared builder: shapes one CustodyRecord row plus the found report's
+    collection_point (not a CustodyRecord column, so it never comes along
+    for free) into the response schema. Used by both list_custody_records
+    (everyone, all records) and list_my_custody_records (mine only)."""
+    return CustodyRecordOut(
+        id=record.id,
+        match_id=record.match_id,
+        item_name=record.item_name,
+        claimant_name=record.claimant_name,
+        claimant_contact=record.claimant_contact,
+        verifier_name=record.verifier_name,
+        handover_datetime=record.handover_datetime,
+        notes=record.notes,
+        identity_verified=record.identity_verified,
+        collection_point=collection_point,
+    )
+
+
 @router.get("/", response_model=List[CustodyRecordOut])
 def list_custody_records(db: Session = Depends(get_db)):
-    return (
-        db.query(CustodyRecord)
+    """
+    Every confirmed handover, most recent first. No auth restriction here
+    (never had one) -- both the admin "Claimed items" page and the
+    non-admin "Claimed items" page hit this same endpoint; the frontend
+    just chooses which columns to render.
+
+    collection_point is joined in from the found report via Match, same
+    as list_my_custody_records below, so both admin and non-admin views
+    can show "where do I collect it" without a second request.
+    """
+    FoundReport = aliased(Report)
+    rows = (
+        db.query(CustodyRecord, FoundReport.collection_point)
+        .join(Match, Match.id == CustodyRecord.match_id)
+        .join(FoundReport, FoundReport.id == Match.found_report_id)
         .order_by(CustodyRecord.handover_datetime.desc())
         .all()
     )
+    return [_custody_out_with_collection_point(record, cp) for record, cp in rows]
 
 
 @router.get("/mine", response_model=List[CustodyRecordOut])
@@ -52,15 +85,22 @@ def list_my_custody_records(
     who filed the LOST report behind the match. CustodyRecord itself only
     stores the free-text claimant_name typed into the claim form, so
     ownership is derived by walking match -> lost report -> reporter_id.
+
+    Kept around even though the non-admin "Claimed items" page no longer
+    uses it (that now shows every record, via list_custody_records above)
+    -- left here in case a future "just my own claims" view needs it.
     """
-    return (
-        db.query(CustodyRecord)
+    FoundReport = aliased(Report)
+    rows = (
+        db.query(CustodyRecord, FoundReport.collection_point)
         .join(Match, Match.id == CustodyRecord.match_id)
         .join(Report, Report.id == Match.lost_report_id)
+        .join(FoundReport, FoundReport.id == Match.found_report_id)
         .filter(Report.reporter_id == user.id)
         .order_by(CustodyRecord.handover_datetime.desc())
         .all()
     )
+    return [_custody_out_with_collection_point(record, cp) for record, cp in rows]
 
 
 @router.get("/mine/claims", response_model=List[MyClaimOut])

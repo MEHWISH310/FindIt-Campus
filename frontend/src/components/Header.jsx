@@ -79,12 +79,13 @@ export default function Header() {
             Found
             {counts.found !== null && <span className="nav-count">{counts.found}</span>}
           </NavLink>
-          {user.is_admin && (
-            <NavLink to="/claimed" className={({ isActive }) => (isActive ? 'active' : '')}>
-              Claimed
-              {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
-            </NavLink>
-          )}
+          <NavLink
+            to={user.is_admin ? '/claimed' : '/my-claims'}
+            className={({ isActive }) => (isActive ? 'active' : '')}
+          >
+            Claimed
+            {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
+          </NavLink>
           {user.is_admin && (
             <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
               Pickups

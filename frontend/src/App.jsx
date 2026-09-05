@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import ReportForm from './pages/ReportForm';
 import Matches from './pages/Matches';
 import ClaimedItems from './pages/ClaimedItems';
+import MyClaimedItems from './pages/MyClaimedItems';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
 import RequestAccess from './pages/RequestAccess';
@@ -69,6 +70,14 @@ export default function App() {
                 element={
                   <ProtectedRoute adminOnly>
                     <ClaimedItems />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/my-claims"
+                element={
+                  <ProtectedRoute>
+                    <MyClaimedItems />
                   </ProtectedRoute>
                 }
               />
