@@ -80,26 +80,26 @@ const STEPS = [
 const SIGNALS = [
   {
     tag: 'S1',
-    title: 'Text understanding',
-    body: '“Black wallet” and “dark brown leather purse” land close together, because descriptions are embedded with a sentence transformer, not string-matched.',
-    weight: 0.82,
+    title: 'Description',
+    body: 'Reports are compared by meaning, so “black wallet” and “dark brown leather purse” are recognised as the same kind of thing.',
+    weight: 1,
   },
   {
     tag: 'S2',
-    title: 'Image similarity',
-    body: 'Uploaded photos are compared with CLIP, so a picture of the item counts even when the words don’t line up.',
-    weight: 0.7,
+    title: 'Photo',
+    body: 'When an image is attached, the match is checked against it too, catching items that were worded quite differently.',
+    weight: 1,
   },
   {
     tag: 'S3',
-    title: 'Geo-temporal fusion',
-    body: 'A find 40 m and 20 minutes away outranks one across campus a week later. Location proximity and time decay weight every candidate.',
-    weight: 0.9,
+    title: 'Place & time',
+    body: 'A find close to where and when something was lost counts for more than one far away or much later.',
+    weight: 0.45,
   },
   {
     tag: 'S4',
-    title: 'Calibrated confidence',
-    body: 'Scores pass through a calibration layer, so an 80% match really is right about 80% of the time, measured with Expected Calibration Error.',
+    title: 'Calibrated score',
+    body: 'The four signals combine into a single percentage that is tuned to reflect how often a match at that level is correct.',
     weight: 1,
   },
 ];
@@ -286,7 +286,10 @@ export default function Landing() {
         <Deco kind="ring" className="lp-deco--l" />
         <p className="lp-eyebrow mono">What powers the match</p>
         <h2 id="what-powers" className="lp-h2">Four signals, one calibrated score.</h2>
-        <p className="lp-signal-hint">Slide across the bars to see what each one contributes.</p>
+        <p className="lp-signal-hint">
+          Leave one out and the others carry the match. Slide across the bars to
+          see what each one adds.
+        </p>
         <SignalExplorer />
       </section>
 
