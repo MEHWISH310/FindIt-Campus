@@ -18,6 +18,7 @@ to train on, no calibrator.pkl exists yet and match_probability stays
 null, so the UI falls back to showing raw_score/ranking.
 """
 
+import logging
 import math
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +53,19 @@ from app.core.email import send_email
 from app.routers.auth import get_current_user_optional, get_current_user
 
 router = APIRouter(prefix="/matches", tags=["matches"])
+
+logger = logging.getLogger("findit.claims")
+
+# Wrong hidden-answer tries allowed against a match before online claiming
+# is locked. After this, the only path forward is an admin verifying the
+# claimant in person (custody.py's admin_verify_claim). A correct answer
+# at any point resets the counter.
+MAX_CLAIM_ATTEMPTS = 3
+
+CLAIM_LOCKED_MESSAGE = (
+    "Verification failed -- you've used all 3 attempts. If this item is really "
+    "yours, go to the lost & found admin desk to verify in person."
+)
 
 # If the top two candidates' raw scores are within this margin, trigger
 # disambiguation instead of auto-picking the top one (per your abstract:
@@ -361,8 +375,36 @@ async def check_answer(
     if not found_report.hidden_answer:
         raise HTTPException(400, "This found report has no verification question set up")
 
+    if match.failed_claim_attempts >= MAX_CLAIM_ATTEMPTS:
+        return CheckAnswerResponse(
+            correct=False, locked=True, attempts_left=0, message=CLAIM_LOCKED_MESSAGE
+        )
+
     is_correct = payload.hidden_answer.strip().lower() == found_report.hidden_answer.strip().lower()
-    return CheckAnswerResponse(correct=is_correct)
+
+    if is_correct:
+        if match.failed_claim_attempts:
+            match.failed_claim_attempts = 0
+            db.commit()
+        return CheckAnswerResponse(correct=True)
+
+    match.failed_claim_attempts += 1
+    db.commit()
+    left = max(0, MAX_CLAIM_ATTEMPTS - match.failed_claim_attempts)
+    logger.warning(
+        "wrong claim answer: user=%s match=%s (%d/%d used)",
+        user.id, match.id, match.failed_claim_attempts, MAX_CLAIM_ATTEMPTS,
+    )
+    return CheckAnswerResponse(
+        correct=False,
+        locked=left == 0,
+        attempts_left=left,
+        message=(
+            CLAIM_LOCKED_MESSAGE
+            if left == 0
+            else f"That answer doesn't match. {left} attempt{'' if left == 1 else 's'} left."
+        ),
+    )
 
 
 @router.post("/{match_id}/verify", response_model=ClaimResponse)
@@ -440,17 +482,42 @@ async def verify_claim(
     if not found_report.hidden_answer:
         raise HTTPException(400, "This found report has no verification question set up")
 
+    if match.failed_claim_attempts >= MAX_CLAIM_ATTEMPTS:
+        return ClaimResponse(
+            verified=False,
+            message=CLAIM_LOCKED_MESSAGE,
+            match=_build_match_out(match, db, user),
+            custody_record=None,
+            locked=True,
+            attempts_left=0,
+        )
+
     # Case/whitespace-insensitive so "iPhone" vs "iphone" doesn't fail
     # someone over a genuinely correct answer.
     is_correct = payload.hidden_answer.strip().lower() == found_report.hidden_answer.strip().lower()
 
     if not is_correct:
+        match.failed_claim_attempts += 1
+        db.commit()
+        left = max(0, MAX_CLAIM_ATTEMPTS - match.failed_claim_attempts)
+        logger.warning(
+            "wrong claim answer: user=%s match=%s (%d/%d used)",
+            user.id, match.id, match.failed_claim_attempts, MAX_CLAIM_ATTEMPTS,
+        )
         return ClaimResponse(
             verified=False,
-            message="That answer doesn't match. You can try again.",
+            message=(
+                CLAIM_LOCKED_MESSAGE
+                if left == 0
+                else f"That answer doesn't match. {left} attempt{'' if left == 1 else 's'} left."
+            ),
             match=_build_match_out(match, db, user),
             custody_record=None,
+            locked=left == 0,
+            attempts_left=left,
         )
+
+    match.failed_claim_attempts = 0
 
     match.status = MatchStatus.VERIFIED
     # Stash who's coming to collect it and how to reach them -- admin needs

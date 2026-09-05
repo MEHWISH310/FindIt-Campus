@@ -53,6 +53,20 @@ def on_startup():
     # used with real data, since create_all() can't handle schema changes.
     Base.metadata.create_all(bind=engine)
 
+    # Lightweight stand-in for a real migration until Alembic is wired up:
+    # create_all() above never ALTERs an existing table, so newly-added
+    # columns on already-created tables have to be backfilled by hand.
+    # Postgres supports ADD COLUMN IF NOT EXISTS, so this is idempotent.
+    from sqlalchemy import text
+
+    _ADDITIVE_MIGRATIONS = [
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS failed_claim_attempts INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS verified_by_admin VARCHAR(5) DEFAULT 'false'",
+    ]
+    with engine.begin() as conn:
+        for stmt in _ADDITIVE_MIGRATIONS:
+            conn.execute(text(stmt))
+
 
 # Photos are saved to disk under settings.upload_dir (see routers/reports.py's
 # upload_photos endpoint) and served back out from here at /uploads/<report_id>/<file>.

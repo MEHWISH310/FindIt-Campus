@@ -20,7 +20,13 @@ from app.models.match import Match, MatchStatus
 from app.models.report import Report, ReportStatus
 from app.models.user import User
 from app.routers.auth import get_current_user, require_admin
-from app.routers.schemas import CustodyRecordOut, PendingPickupOut, ReporterInfoOut, MyClaimOut
+from app.routers.schemas import (
+    AdminVerifyRequest,
+    CustodyRecordOut,
+    PendingPickupOut,
+    ReporterInfoOut,
+    MyClaimOut,
+)
 from app.matching.redaction import reveal_photos
 from app.realtime import sio
 
@@ -139,6 +145,30 @@ def get_custody_record(record_id: str, db: Session = Depends(get_db)):
     return record
 
 
+def _pending_pickup_out(match: Match, db: Session) -> PendingPickupOut | None:
+    """Shape one VERIFIED match into the admin pickup-queue row. Returns
+    None if either underlying report has since been deleted."""
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    if not found_report or not lost_report:
+        return None
+
+    finder = db.query(User).filter(User.id == found_report.reporter_id).first() if found_report.reporter_id else None
+    owner = db.query(User).filter(User.id == lost_report.reporter_id).first() if lost_report.reporter_id else None
+
+    return PendingPickupOut(
+        match_id=match.id,
+        item_title=found_report.title,
+        category=found_report.category,
+        collection_point=found_report.collection_point,
+        found_report_id=found_report.id,
+        lost_report_id=lost_report.id,
+        finder=ReporterInfoOut(id=finder.id, name=finder.name, email=finder.email, phone=finder.phone) if finder else None,
+        owner=ReporterInfoOut(id=owner.id, name=owner.name, email=owner.email, phone=owner.phone) if owner else None,
+        verified_at=match.updated_at,
+    )
+
+
 @router.get("/admin/pending-pickups", response_model=List[PendingPickupOut])
 def list_pending_pickups(
     db: Session = Depends(get_db),
@@ -152,31 +182,63 @@ def list_pending_pickups(
     click confirm.
     """
     matches = db.query(Match).filter(Match.status == MatchStatus.VERIFIED).order_by(Match.updated_at.asc()).all()
+    return [row for row in (_pending_pickup_out(m, db) for m in matches) if row]
 
-    out = []
-    for match in matches:
-        found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
-        lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
-        if not found_report or not lost_report:
-            continue
 
-        finder = db.query(User).filter(User.id == found_report.reporter_id).first() if found_report.reporter_id else None
-        owner = db.query(User).filter(User.id == lost_report.reporter_id).first() if lost_report.reporter_id else None
+@router.post("/admin/{match_id}/verify", response_model=PendingPickupOut)
+async def admin_verify_claim(
+    match_id: str,
+    payload: AdminVerifyRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """
+    Admin-only. Verification done in person: a student failed the online
+    check (or ran out of attempts and got locked), came to the desk, and
+    proved the item is theirs some other way. The admin fills in the
+    claimant's identity details here and this stands in for the answered
+    verification question -- the match jumps to VERIFIED and lands in the
+    pickup queue, exactly as a successful online claim would, so the admin
+    can then hand it over via the usual "Mark handed over".
 
-        out.append(
-            PendingPickupOut(
-                match_id=match.id,
-                item_title=found_report.title,
-                category=found_report.category,
-                collection_point=found_report.collection_point,
-                found_report_id=found_report.id,
-                lost_report_id=lost_report.id,
-                finder=ReporterInfoOut(id=finder.id, name=finder.name, email=finder.email, phone=finder.phone) if finder else None,
-                owner=ReporterInfoOut(id=owner.id, name=owner.name, email=owner.email, phone=owner.phone) if owner else None,
-                verified_at=match.updated_at,
-            )
-        )
-    return out
+    Resets the failed-attempt counter (so nothing stays stuck "locked")
+    and records that this was an admin-assisted verification.
+    """
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+    if match.status == MatchStatus.CONFIRMED:
+        raise HTTPException(400, "This item has already been handed over.")
+    if match.status == MatchStatus.REJECTED:
+        raise HTTPException(400, "This match was rejected and can no longer be claimed.")
+
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    if not found_report or not lost_report:
+        raise HTTPException(404, "One of the reports behind this match no longer exists")
+
+    match.pending_claimant_name = payload.claimant_name.strip()
+    match.pending_claimant_contact = (payload.claimant_contact or "").strip() or None
+    match.pending_claimant_notes = (payload.notes or "").strip() or None
+    match.pending_claimant_registration_number = (
+        (payload.claimant_registration_number or "").strip().upper() or None
+    )
+    match.status = MatchStatus.VERIFIED
+    match.verified_by_admin = "true"
+    match.failed_claim_attempts = 0
+    db.commit()
+    db.refresh(match)
+
+    await sio.emit(
+        "match:verified",
+        {
+            "match_id": str(match.id),
+            "item_name": found_report.title,
+            "claimant_name": match.pending_claimant_name,
+        },
+    )
+
+    return _pending_pickup_out(match, db)
 
 
 @router.post("/admin/{match_id}/handover", response_model=CustodyRecordOut)
