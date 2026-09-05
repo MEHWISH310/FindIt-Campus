@@ -1,15 +1,18 @@
 """
 Endpoints for submitting and listing lost/found reports.
 
-Note: this does NOT compute embeddings synchronously inside the request --
-loading Sentence-Transformers/CLIP on every single report submission would
-make the API slow. In a real deployment you'd push embedding computation
-to a background task (FastAPI's BackgroundTasks, or a queue like Celery).
-For now this endpoint saves the report and computes the embedding inline,
-which is fine for a college-project scale, but is called out here so you
-know it's the first thing to move to a background job under real load.
+Note: this DOES compute the text embedding as part of report creation, but
+it now runs on a worker thread via asyncio.to_thread(), not on the event
+loop itself. That keeps report creation slightly slower for the one caller
+who has to wait for the embedding, but stops it from freezing the whole
+server for every other in-flight request (chatbot calls, other manual
+submissions, GET /reports/, etc.) while the model runs. At real scale,
+you'd still want to move this further -- into a background task or a
+queue like Celery -- so report creation returns instantly and the
+embedding is filled in moments later.
 """
 
+import asyncio
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -110,8 +113,14 @@ async def create_report(
     )
 
     # Compute text embedding now so it's ready for matching immediately.
+    # Run on a worker thread -- encode_text() is a blocking CPU-bound call
+    # (Sentence-Transformers/CLIP inference), and running it directly on
+    # the event loop would stall every other request the server is
+    # handling (including the chatbot's own internal HTTP calls) until it
+    # finishes. asyncio.to_thread() hands it to a thread pool instead, so
+    # the loop stays free.
     # (Image embedding would be computed similarly once photo upload is wired up.)
-    report.text_embedding = encode_text(payload.description)
+    report.text_embedding = await asyncio.to_thread(encode_text, payload.description)
 
     db.add(report)
     db.commit()
@@ -261,6 +270,12 @@ def upload_photos(
     multipart form) so the frontend can create the report first, get an
     id back, then upload photos with a progress indicator -- and so a
     report can still be submitted even if a photo fails to upload.
+
+    This is a plain `def` (not `async def`) on purpose: FastAPI runs sync
+    path operations in its worker thread pool automatically, so the
+    blocking encode_images() call below does NOT stall the event loop the
+    way a blocking call inside an `async def` would. No asyncio.to_thread
+    needed here -- it's already off the loop.
     """
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:

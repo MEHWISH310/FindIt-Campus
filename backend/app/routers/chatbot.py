@@ -9,6 +9,7 @@ instead of duplicating that logic here.
 
 Requires GEMINI_API_KEY in your .env (see core/config.py).
 """
+import asyncio
 import json
 import httpx
 from google import genai
@@ -175,6 +176,14 @@ async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> 
     whatever Authorization header the chat request itself carried -- so a
     report created via chat, or a pickup confirmed via chat, is attributed
     to the actual logged-in user/admin, exactly as if they'd used the form.
+
+    Note: this calls back into the app's own /reports, /matches, /custody
+    endpoints over real HTTP (to localhost) rather than invoking their
+    handler functions directly in-process. That's fine now that
+    create_report itself no longer blocks the event loop (see reports.py),
+    but it's still an extra network hop for no real benefit -- worth
+    swapping for a direct in-process function call later to remove the
+    self-call entirely.
     """
     headers = {"Authorization": auth_header} if auth_header else {}
     async with httpx.AsyncClient(base_url=INTERNAL_BASE_URL, timeout=30, headers=headers) as client_http:
@@ -236,7 +245,15 @@ async def chat(
 
     for _ in range(MAX_TOOL_ITERATIONS):
         try:
-            response = client.models.generate_content(
+            # client.models.generate_content() is a blocking (synchronous)
+            # network call to Gemini -- there's no async client method
+            # being used here. Running it directly inside this async def
+            # would stall the event loop for the whole round-trip, the
+            # same way the embedding call in reports.py used to. Pushing
+            # it to a worker thread with asyncio.to_thread keeps the
+            # server responsive to other requests while Gemini replies.
+            response = await asyncio.to_thread(
+                client.models.generate_content,
                 model=MODEL_NAME,
                 contents=contents,
                 config=config,
@@ -283,4 +300,3 @@ async def chat(
         reply="I'm having trouble finishing that request right now -- could you try rephrasing, or use the regular form instead?",
         history=req.history,
     )
-    
