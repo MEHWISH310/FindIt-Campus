@@ -26,6 +26,8 @@ function timeAgo(dateString) {
  * token: logged-in user's JWT, needed to authorize the delete call
  * onDeleted: called with report.id after a successful delete, so the
  *   parent list can remove the card from state
+ * isAdmin: whether the logged-in user is an admin. Admins can see the
+ *   report's id (for verification at the desk) even if it isn't theirs.
  */
 export default function NoticeCard({
   report,
@@ -35,6 +37,7 @@ export default function NoticeCard({
   currentUserId,
   token,
   onDeleted,
+  isAdmin = false,
 }) {
   const isFound = report.report_type === 'found';
   const thumbnail = report.photo_paths?.[0];
@@ -42,6 +45,9 @@ export default function NoticeCard({
   const isResolved = report.status === 'resolved';
   const photosRedacted = report.photos_redacted && thumbnail;
   const isOwner = Boolean(currentUserId) && report.reporter_id === currentUserId;
+  // Report id is only meaningful to the person who needs to quote it for
+  // verification: the reporter themselves, or an admin handling the desk.
+  const canSeeReportId = isAdmin || isOwner;
   const [photoOpen, setPhotoOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -129,6 +135,11 @@ export default function NoticeCard({
           </span>
         )}
       </div>
+      {canSeeReportId && (
+        <p className="notice-report-id mono">
+          ID: {report.id}
+        </p>
+      )}
       <h3 className="notice-title">{report.title}</h3>
       {!compact && <p className="notice-desc">{report.description}</p>}
       {report.is_stale && !compact && (

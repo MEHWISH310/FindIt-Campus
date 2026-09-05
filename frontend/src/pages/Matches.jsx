@@ -313,7 +313,7 @@ function DisambiguationPrompt({ matches, sourceId, onResolved }) {
   );
 }
 
-function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
+function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner, isAdmin }) {
   const [counterpart, setCounterpart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [claimOpen, setClaimOpen] = useState(false);
@@ -376,6 +376,11 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
     !verifiedPendingPickup &&
     isSourceOwner;
 
+  // The match ref is shown to the claimant (so they can quote it to admin
+  // if they need in-person verification) and to admins themselves (who
+  // need it to look the match up at the pickup desk).
+  const canSeeMatchRef = isSourceOwner || isAdmin;
+
   return (
     <div
       className={`thread-row ${needsReview ? 'thread-row--review' : ''}`}
@@ -389,6 +394,7 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
             <NoticeCard
               report={counterpart}
               compact
+              isAdmin={isAdmin}
               primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
             />
             {isConfirmed && <p className="claim-form-success-note">Already claimed and confirmed.</p>}
@@ -434,7 +440,7 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
         {match.used_signals?.length > 0 && (
           <span className="signals">{match.used_signals.join(', ')}</span>
         )}
-        {isSourceOwner && (
+        {canSeeMatchRef && (
           <span className="match-ref mono" title="Quote this to the admin desk if you need in-person verification">
             ref {match.id}
           </span>
@@ -512,7 +518,7 @@ export default function Matches() {
 
       {sourceReport && (
         <div className="source-card-wrap">
-          <NoticeCard report={sourceReport} />
+          <NoticeCard report={sourceReport} isAdmin={user?.is_admin} currentUserId={user?.id} />
         </div>
       )}
 
@@ -560,6 +566,7 @@ export default function Matches() {
                     index={i}
                     onClaimed={refreshSourceReport}
                     isSourceOwner={isSourceOwner}
+                    isAdmin={user?.is_admin}
                   />
                 ))}
               </div>

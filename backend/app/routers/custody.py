@@ -84,6 +84,12 @@ def list_my_claims(
 
     Pending items are listed first (they're the ones needing action),
     then completed ones most-recent-first.
+
+    Each row also carries match_id -- distinct from `id`, which stays
+    match id for pending rows but custody-record id for completed rows
+    (kept as-is for backward compatibility) -- so the frontend has one
+    reliable field to show/reference regardless of which stage the
+    claim is in.
     """
     out = []
 
@@ -101,6 +107,7 @@ def list_my_claims(
         out.append(
             MyClaimOut(
                 id=str(match.id),
+                match_id=str(match.id),
                 item_name=found_report.title,
                 status="pending",
                 handover_datetime=None,
@@ -127,6 +134,7 @@ def list_my_claims(
         out.append(
             MyClaimOut(
                 id=str(record.id),
+                match_id=str(record.match_id),
                 item_name=record.item_name,
                 status="completed",
                 handover_datetime=record.handover_datetime,

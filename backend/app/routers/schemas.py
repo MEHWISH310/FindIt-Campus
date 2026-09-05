@@ -271,8 +271,16 @@ class MyClaimOut(BaseModel):
     with actual completed handovers (status='completed') into a single
     timeline, since from the claimant's point of view both are 'things
     I claimed', just at different stages. See custody.py's
-    list_my_claims."""
+    list_my_claims.
+
+    `id` stays as-is for backward compatibility (match id for pending
+    rows, custody record id for completed rows) -- `match_id` is the
+    field the frontend should actually use to display/reference the
+    underlying match, since it's reliably the same kind of id in both
+    branches.
+    """
     id: str
+    match_id: str
     item_name: str
     status: str  # "pending" | "completed"
     handover_datetime: Optional[datetime] = None

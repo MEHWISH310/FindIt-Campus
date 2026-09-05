@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { listReports, escalateStale, showToast } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import NoticeCard from '../components/NoticeCard';
 
 // A report counts as "past the threshold" once it's high-risk, still
@@ -23,6 +24,7 @@ function selectStaleHighRisk(list) {
 }
 
 export default function Dashboard({ reportType }) {
+  const { user } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -144,7 +146,19 @@ export default function Dashboard({ reportType }) {
       <div className="dashboard-grid">
         {visibleReports.map((report, i) => (
           <div key={report.id} style={{ '--card-index': i }}>
-            <NoticeCard report={report} onFindMatches={() => navigate(`/matches/${report.id}`)} />
+            {/*
+              Deliberately NOT passing currentUserId/token here: on the
+              shared Lost/Found tabs, nobody should see a report's id just
+              because they filed it -- that's reserved for their own
+              Profile page. Only isAdmin is passed, so NoticeCard's
+              canSeeReportId (isAdmin || isOwner) only ever resolves true
+              here for an admin, regardless of who reported it.
+            */}
+            <NoticeCard
+              report={report}
+              onFindMatches={() => navigate(`/matches/${report.id}`)}
+              isAdmin={user?.is_admin}
+            />
           </div>
         ))}
       </div>

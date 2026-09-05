@@ -118,6 +118,7 @@ export default function Profile() {
               token={getStoredToken()}
               onDeleted={handleDeleted}
               onFindMatches={() => navigate(`/matches/${report.id}`)}
+              isAdmin={user?.is_admin}
             />
           </div>
         ))}
@@ -190,6 +191,7 @@ export default function Profile() {
                   <thead>
                     <tr>
                       <th>Item</th>
+                      <th>Ref</th>
                       <th>Handed over</th>
                       <th>Status</th>
                       <th>Place of pickup</th>
@@ -199,6 +201,9 @@ export default function Profile() {
                     {claimed.map((r) => (
                       <tr key={r.id}>
                         <td>{r.item_name}</td>
+                        <td className="mono" title={r.match_id}>
+                          {r.match_id ? r.match_id.slice(0, 8) : '—'}
+                        </td>
                         <td className="mono">
                           {r.status === 'pending' ? '-' : formatDateTime(r.handover_datetime)}
                         </td>

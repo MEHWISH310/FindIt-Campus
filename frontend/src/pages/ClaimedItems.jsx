@@ -52,6 +52,7 @@ export default function ClaimedItems() {
           <table className="custody-table">
             <thead>
               <tr>
+                <th>Match ID</th>
                 <th>Item</th>
                 <th>Claimant</th>
                 <th>Contact</th>
@@ -63,6 +64,7 @@ export default function ClaimedItems() {
             <tbody>
               {records.map((r) => (
                 <tr key={r.id}>
+                  <td className="mono" title={r.match_id}>{r.match_id.slice(0, 8)}</td>
                   <td>{r.item_name}</td>
                   <td>{r.claimant_name}</td>
                   <td>{r.claimant_contact || '-'}</td>
