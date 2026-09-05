@@ -191,23 +191,46 @@ function SignalExplorer() {
 const SAFEGUARDS = [
   {
     k: '01',
-    title: 'Asymmetric verification',
-    body: 'Finders set a hidden question; claimants must answer it before any contact detail is shown. Three misses locks the claim for a day.',
+    title: 'Secret question',
+    body: 'The finder sets a question only the real owner could answer. Get it wrong and the claim doesn’t go through, so nobody talks their way into someone else’s belongings.',
   },
   {
     k: '02',
-    title: 'Custody ledger',
-    body: 'Every handover is written once and never edited. Item, claimant, verifier, and timestamp form an auditable chain.',
+    title: 'Handover on record',
+    body: 'Every pickup is logged once and never rewritten: what, who, and when. A clean paper trail for anything that changes hands.',
   },
   {
     k: '03',
-    title: 'High-risk handling',
-    body: 'IDs, phones, keys, and documents get priority matching, redacted numbers in public views, and escalation if unclaimed after 7 days.',
+    title: 'Careful with the risky stuff',
+    body: 'IDs, phones, and laptops get their photos blurred in public and a nudge to staff if nobody claims them.',
   },
   {
     k: '04',
-    title: 'Smart disambiguation',
-    body: 'When two matches score too close to call, you get one targeted attribute question instead of a wrong guess.',
+    title: 'One good question',
+    body: 'Two matches too close to call? You get a single “is this the one?” instead of a coin flip.',
+  },
+];
+
+const EXTRAS = [
+  {
+    k: '01',
+    title: 'Just ask',
+    body: 'A chat assistant files your report, checks for matches, and answers “how does this work?” without you touching a form.',
+  },
+  {
+    k: '02',
+    title: 'Live nudges',
+    body: 'A match, a claim, a heads-up, they pop up the moment they happen, and hit your inbox too.',
+  },
+  {
+    k: '03',
+    title: 'Campus only',
+    body: 'VIT email to get in, and your name stays hidden from everyone but staff.',
+  },
+  {
+    k: '04',
+    title: 'Works like an app',
+    body: 'Add it to your home screen and it opens full-screen, with a stable connection on patchy campus networks.',
   },
 ];
 
@@ -311,14 +334,33 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 4. Closing band */}
+      {/* 4. Beyond the match: second bento of everyday features */}
+      <section className="lp-sec lp-safe" aria-labelledby="beyond-match">
+        <Deco kind="squiggle" className="lp-deco--c" />
+        <Deco kind="octagon" className="lp-deco--d" />
+        <Deco kind="ring" className="lp-deco--g" />
+        <p className="lp-eyebrow mono">Beyond the match</p>
+        <h2 id="beyond-match" className="lp-h2">Built to be lived in.</h2>
+        <div className="lp-bento">
+          {EXTRAS.map((f) => (
+            <article key={f.k} className="lp-bento-tile">
+              <span className="lp-bento-k mono">{f.k}</span>
+              <h3 className="lp-bento-title">{f.title}</h3>
+              <p className="lp-bento-body">{f.body}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* 5. Closing band */}
       <section className="lp-closing" aria-labelledby="closing-cta">
         <Deco kind="star" className="lp-deco--h" />
         <Deco kind="plus" className="lp-deco--i" />
         <Deco kind="octagon" className="lp-deco--j" />
         <h2 id="closing-cta" className="lp-closing-title">Lost something today?</h2>
         <p className="lp-closing-sub">
-          It takes under a minute to file a notice. The engine does the searching.
+          A minute to file a notice, or just tell the assistant. The engine does
+          the digging.
         </p>
         <div className="landing-ctas">
           <Link to="/report/lost" className="cta cta--lost">
