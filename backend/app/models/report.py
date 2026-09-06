@@ -19,6 +19,7 @@ from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 
 from app.db.session import Base
+from app.models.building import Building
 
 
 class ReportType(str, enum.Enum):
@@ -74,12 +75,16 @@ class Report(Base):
     longitude = Column(Float, nullable=True)
     item_datetime = Column(DateTime, nullable=False)       # when lost/found
 
-    # Only meaningful on FOUND reports: where the finder physically handed
-    # the item over to admin (e.g. "Main Gate security desk", "Hostel D
-    # warden's office"). This is what the owner is told to go to once
-    # they're verified -- see matches.py's verify_claim and
-    # ClaimResponse.collection_point.
-    collection_point = Column(String(200), nullable=True)
+    # Only meaningful on FOUND reports: which of the two collection points
+    # admin will physically be holding the item at. Restricted to the
+    # shared Building enum (not free text) so it always lines up exactly
+    # with an admin's assigned_building -- custody.py's
+    # list_pending_pickups filters on direct equality against this
+    # column, so a stray "Main gate" vs "main gate" typo can never
+    # silently hide an item from the right admin. This is what the owner
+    # is told to go to once they're verified -- see matches.py's
+    # verify_claim and ClaimResponse.collection_point.
+    collection_point = Column(Enum(Building), nullable=True)
 
     # Embeddings for matching (nullable -- fusion.py handles missing signals)
     text_embedding = Column(Vector(384), nullable=True)    # from Sentence-Transformers

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { createReport, uploadPhotos, checkVerificationQuestion, ApiError } from '../api/client';
 import { answerLeaks } from '../utils/leakCheck';
+import { COLLECTION_POINTS } from '../utils/buildings';
 
 const ANSWER_LEAK_MESSAGE =
   'That answer is visible in your description. Pick something only the owner would know.';
@@ -206,7 +207,7 @@ export default function ReportForm() {
       return;
     }
     if (isFound && !form.collection_point.trim()) {
-      setError('Tell us where admin will be holding this item so the owner knows where to collect it.');
+      setError('Pick a collection point so the owner knows where to collect it.');
       return;
     }
     if (!isFound) {
@@ -473,12 +474,20 @@ export default function ReportForm() {
             </label>
             <label className="field">
               <span>Where you'll hand it to admin*</span>
-              <input
+              <select
                 required
                 value={form.collection_point}
                 onChange={(e) => update('collection_point', e.target.value)}
-                placeholder="e.g. Main Gate security desk"
-              />
+              >
+                <option value="" disabled>
+                  Choose a collection point
+                </option>
+                {COLLECTION_POINTS.map((cp) => (
+                  <option key={cp.value} value={cp.value}>
+                    {cp.label}
+                  </option>
+                ))}
+              </select>
               <p className="photo-hint">The owner collects it from here.</p>
             </label>
 

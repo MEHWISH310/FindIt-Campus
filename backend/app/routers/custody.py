@@ -10,6 +10,7 @@ import os
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import false
 from sqlalchemy.orm import Session, aliased
 
 from app.core.config import settings
@@ -33,11 +34,16 @@ from app.realtime import sio
 router = APIRouter(prefix="/custody", tags=["custody"])
 
 
-def _custody_out_with_collection_point(record: CustodyRecord, collection_point: str | None) -> CustodyRecordOut:
+def _custody_out_with_collection_point(record: CustodyRecord, collection_point) -> CustodyRecordOut:
     """Shared builder: shapes one CustodyRecord row plus the found report's
     collection_point (not a CustodyRecord column, so it never comes along
     for free) into the response schema. Used by both list_custody_records
-    (everyone, all records) and list_my_custody_records (mine only)."""
+    (everyone, all records) and list_my_custody_records (mine only).
+
+    collection_point comes back from the DB as a Building enum member (or
+    None) since Report.collection_point is now Column(Enum(Building)) --
+    .value turns it into the plain "PRP"/"SJT" string the schema expects.
+    """
     return CustodyRecordOut(
         id=record.id,
         match_id=record.match_id,
@@ -48,7 +54,7 @@ def _custody_out_with_collection_point(record: CustodyRecord, collection_point: 
         handover_datetime=record.handover_datetime,
         notes=record.notes,
         identity_verified=record.identity_verified,
-        collection_point=collection_point,
+        collection_point=collection_point.value if collection_point else None,
     )
 
 
@@ -151,7 +157,7 @@ def list_my_claims(
                 item_name=found_report.title,
                 status="pending",
                 handover_datetime=None,
-                collection_point=found_report.collection_point,
+                collection_point=found_report.collection_point.value if found_report.collection_point else None,
             )
         )
 
@@ -178,7 +184,7 @@ def list_my_claims(
                 item_name=record.item_name,
                 status="completed",
                 handover_datetime=record.handover_datetime,
-                collection_point=collection_point,
+                collection_point=collection_point.value if collection_point else None,
             )
         )
 
@@ -208,7 +214,7 @@ def _pending_pickup_out(match: Match, db: Session) -> PendingPickupOut | None:
         match_id=match.id,
         item_title=found_report.title,
         category=found_report.category,
-        collection_point=found_report.collection_point,
+        collection_point=found_report.collection_point.value if found_report.collection_point else None,
         found_report_id=found_report.id,
         lost_report_id=lost_report.id,
         finder=ReporterInfoOut(id=finder.id, name=finder.name, email=finder.email, phone=finder.phone) if finder else None,
@@ -228,8 +234,26 @@ def list_pending_pickups(
     is the queue admin works off of at the collection point: look up the
     report's unique id, confirm the person in front of them, hand over,
     click confirm.
+
+    Scoped to the admin's own building (User.assigned_building), joined
+    against the found report's collection_point -- an admin only ever
+    sees handovers for items actually sitting at their own desk, since
+    that's the only place they can physically confirm one. An admin with
+    no assigned_building (shouldn't happen post-seed_admins.py, but not
+    impossible) sees an empty queue rather than everyone else's pickups --
+    fail closed, not open.
     """
-    matches = db.query(Match).filter(Match.status == MatchStatus.VERIFIED).order_by(Match.updated_at.asc()).all()
+    query = (
+        db.query(Match)
+        .join(Report, Report.id == Match.found_report_id)
+        .filter(Match.status == MatchStatus.VERIFIED)
+    )
+    if admin.assigned_building is not None:
+        query = query.filter(Report.collection_point == admin.assigned_building)
+    else:
+        query = query.filter(false())
+
+    matches = query.order_by(Match.updated_at.asc()).all()
     return [row for row in (_pending_pickup_out(m, db) for m in matches) if row]
 
 

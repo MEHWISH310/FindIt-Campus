@@ -6,6 +6,7 @@ import {
   showToast,
   ApiError,
 } from '../api/client';
+import { collectionPointLabel } from '../utils/buildings';
 
 const EMPTY_VERIFY = {
   match_id: '',
@@ -161,6 +162,11 @@ function renderPerson(person) {
  * answered the verification question correctly (status VERIFIED), but the
  * item is still sitting with admin -- nobody's clicked "handed over" yet.
  *
+ * Scoped server-side to the logged-in admin's own assigned_building (see
+ * custody.py's list_pending_pickups) -- this page only ever shows pickups
+ * for whichever desk this admin actually works at, so no client-side
+ * filtering is needed here.
+ *
  * Each row shows the report's unique id (match_id) plus who found it and
  * who's coming to collect it, so admin can look the person up by id when
  * they show up at the collection point, confirm it's really them, and
@@ -235,7 +241,7 @@ export default function Admin() {
                     {p.item_title}
                     {p.category ? ` (${p.category})` : ''}
                   </td>
-                  <td>{p.collection_point || '—'}</td>
+                  <td>{collectionPointLabel(p.collection_point) || '—'}</td>
                   <td className="pickup-person">{renderPerson(p.finder)}</td>
                   <td className="pickup-person">{renderPerson(p.owner)}</td>
                   <td className="mono">{formatDate(p.verified_at)}</td>

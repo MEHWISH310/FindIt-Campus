@@ -12,6 +12,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.building import Building
+
 
 def _assume_utc(v):
     """
@@ -52,10 +54,24 @@ class ReportCreate(BaseModel):
     # must answer before contact info is revealed.
     hidden_question: Optional[str] = None
     hidden_answer: Optional[str] = None
-    # Only relevant when report_type == "found": where the finder physically
-    # handed the item to admin, e.g. "Main Gate security desk". This is
-    # what the owner is told once verified -- see ReportOut.collection_point.
+    # Only relevant when report_type == "found": which collection point
+    # admin will hold the item at, e.g. "PRP" or "SJT". This is what the
+    # owner is told once verified -- see ReportOut.collection_point.
     collection_point: Optional[str] = None
+
+    @field_validator("collection_point")
+    @classmethod
+    def _validate_collection_point(cls, v):
+        # Format-only check here -- whether it's *required* (found reports
+        # only) is still enforced in reports.py's create_report, same as
+        # hidden_question/hidden_answer.
+        if v is None or v == "":
+            return None
+        try:
+            return Building(v).value
+        except ValueError:
+            valid = ", ".join(b.value for b in Building)
+            raise ValueError(f"collection_point must be one of: {valid}")
 
 
 class VerificationCheckRequest(BaseModel):
@@ -113,8 +129,9 @@ class ReportOut(BaseModel):
     # to see in order to know what they're being asked to prove. Only ever
     # set on FOUND reports; null on LOST reports.
     hidden_question: Optional[str] = None
-    # Only meaningful on FOUND reports -- where admin is physically holding
-    # the item. Shown to the owner once their claim is verified.
+    # Only meaningful on FOUND reports -- which collection point admin is
+    # physically holding the item at ("PRP"/"SJT"). Shown to the owner
+    # once their claim is verified.
     collection_point: Optional[str] = None
     # True while photo_paths point at pixelated copies (high-risk + still
     # unclaimed) -- see matching/redaction.py. Lets the frontend show a
