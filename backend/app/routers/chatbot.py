@@ -51,8 +51,8 @@ lost-and-found platform. You can help users with:
 2. Searching for potential matches to an item they've lost.
 3. Explaining how the platform works: asymmetric verification (claimant must
    answer a hidden question before contact info is revealed), the custody
-   ledger (records every handover), high-risk item handling (IDs, phones,
-   documents get priority + redaction), and QR tag pre-registration for valuables.
+   ledger (records every handover), and high-risk item handling (IDs, phones,
+   documents get priority + redaction).
 
 Ask clarifying questions one at a time rather than demanding everything at once.
 Once you have enough info to create a report, use the create_report tool.

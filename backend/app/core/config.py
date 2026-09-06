@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     # Where uploaded report photos get saved on disk (swap for S3/Cloudinary later)
     upload_dir: str = "uploads"
 
-    # Base URL of the deployed frontend -- used to build the link a QR tag
-    # encodes (GET /reports/{id}/qr-code). Must be set to the real deployed
-    # URL in production; localhost is fine for dev.
+    # Base URL of the deployed frontend -- used to build the link in the
+    # "possible match found" email (see matches.py). Must be set to the
+    # real deployed URL in production; localhost is fine for dev.
     frontend_base_url: str = "http://localhost:5173"
 
     # Comma-separated list of origins allowed to call this API (CORS) and to
