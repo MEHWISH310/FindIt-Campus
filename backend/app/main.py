@@ -30,10 +30,13 @@ fastapi_app = FastAPI(
     version="0.1.0",
 )
 
-# Allow the React frontend (running on a different port during dev) to call this API
+# Allow the React frontend (a different origin -- different port in dev, a
+# different host in production) to call this API. Origins come from
+# settings.cors_origins (CORS_ORIGINS env var); localhost dev ports are the
+# default -- see app/core/config.py.
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],  # Vite / CRA defaults
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

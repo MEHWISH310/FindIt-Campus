@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     # URL in production; localhost is fine for dev.
     frontend_base_url: str = "http://localhost:5173"
 
+    # Comma-separated list of origins allowed to call this API (CORS) and to
+    # open a Socket.IO connection. Defaults to the local Vite/CRA dev ports;
+    # in a deployed environment set CORS_ORIGINS to the real frontend
+    # origin(s), e.g. "https://findit.example.com,https://www.findit.example.com".
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """cors_origins split into a clean list -- consumed by the CORS
+        middleware (main.py) and the Socket.IO server (realtime.py)."""
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     # SMTP -- blank by default so local dev without real credentials still
     # works (core/email.py falls back to printing the email to the
     # console). Set these in your real .env once you have them; see

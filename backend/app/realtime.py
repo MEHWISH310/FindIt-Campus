@@ -21,10 +21,13 @@ obvious which write triggers which notification.
 
 import socketio
 
+from app.core.config import settings
+
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    # Same origins as the CORS middleware in main.py -- Vite/CRA dev ports.
-    cors_allowed_origins=["http://localhost:5173", "http://localhost:3000"],
+    # Same origins as the CORS middleware in main.py -- from settings.cors_origins
+    # (CORS_ORIGINS env var), defaulting to the Vite/CRA dev ports.
+    cors_allowed_origins=settings.cors_origins_list,
 )
 
 
