@@ -101,7 +101,12 @@ export default function Dashboard({ reportType }) {
   }
 
   const label = reportType === 'lost' ? 'Lost' : 'Found';
-  const visibleReports = escalationOn ? selectStaleHighRisk(reports) : reports;
+  // Unresolved cards first, resolved ones after. The backend list is
+  // already time-ordered and Array.sort is stable, so keying only on
+  // resolved-ness keeps that time order within each group.
+  const visibleReports = (escalationOn ? selectStaleHighRisk(reports) : reports)
+    .slice()
+    .sort((a, b) => (a.status === 'resolved' ? 1 : 0) - (b.status === 'resolved' ? 1 : 0));
 
   return (
     <div className="page-shell dashboard">
