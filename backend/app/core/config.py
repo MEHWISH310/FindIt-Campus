@@ -53,12 +53,17 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
 
-    # Resend (https://resend.com) HTTP API key -- used instead of SMTP for
+    # Brevo (https://brevo.com) HTTP API key -- used instead of SMTP for
     # sending email. Render's free tier blocks outbound SMTP ports (25, 465,
-    # 587) entirely, so smtplib never connects there; Resend sends over
-    # plain HTTPS (port 443) instead, which isn't blocked. If this is unset,
-    # email.py falls back to SMTP_* (for other hosts that do allow SMTP), and
-    # if neither is set, emails just print to the console.
+    # 587) entirely, so smtplib never connects; Brevo sends over plain
+    # HTTPS (port 443) instead, which isn't blocked. brevo_sender must be
+    # an email you've verified as a sender in Brevo (Senders & IP ->
+    # Senders) -- a single verified sender address works, no domain
+    # purchase/authentication needed for this. If RESEND/BREVO/SMTP are all
+    # unset, email.py falls back to printing to the console.
+    brevo_api_key: str = ""
+    brevo_sender: str = ""
+    brevo_sender_name: str = "FindIt Campus"
     resend_api_key: str = ""
     resend_from: str = "onboarding@resend.dev"
     class Config:
