@@ -136,9 +136,11 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
       {result?.verified ? (
         <div className="claim-form claim-form--success">
           <p>{result.message}</p>
-          <button type="button" className="claim-form-cancel" onClick={onClose}>
-            Close
-          </button>
+          <div className="claim-form-actions">
+            <button type="button" className="claim-form-done" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
       ) : locked ? (
         <div className="claim-form">
@@ -343,6 +345,11 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner, isAdmin }
   const [counterpart, setCounterpart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [claimOpen, setClaimOpen] = useState(false);
+  // Set once this user's claim comes back verified, so the row swaps the
+  // "Claim this item" button for a plain "Item has been claimed" note
+  // without needing a page reload (a reload would infer the same thing
+  // from the match now being VERIFIED).
+  const [claimed, setClaimed] = useState(false);
   const [gatedInfo, setGatedInfo] = useState(null); // { found_contact, claimant_info } | null
 
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
@@ -400,6 +407,7 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner, isAdmin }
     counterpart?.status === 'open' &&
     !isConfirmed &&
     !verifiedPendingPickup &&
+    !claimed &&
     isSourceOwner;
 
   // The match ref is shown to the claimant (so they can quote it to admin
@@ -424,10 +432,19 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner, isAdmin }
               primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
             />
             {isConfirmed && <p className="claim-form-success-note">Already claimed and confirmed.</p>}
+            {claimed && !verifiedPendingPickup && !isConfirmed && (
+              <p className="claim-form-success-note">
+                Item has been claimed
+                {counterpart?.collection_point
+                  ? `. Collect it from Building ${counterpart.collection_point}`
+                  : ''}
+                .
+              </p>
+            )}
             {verifiedPendingPickup && (
               <p className="claim-form-success-note">
                 Verified! Go collect this item from admin
-                {counterpart?.collection_point ? ` at ${counterpart.collection_point}` : ''}.
+                {counterpart?.collection_point ? ` at Building ${counterpart.collection_point}` : ''}.
               </p>
             )}
             {isConfirmed && gatedInfo?.found_contact && (
@@ -453,7 +470,15 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner, isAdmin }
         // onClaimed only refreshes the source report's status badge -- the
         // modal stays open so the user sees the "Verified!" message and
         // closes it themselves (via the Close button, Escape, or backdrop).
-        <ClaimModal match={match} foundReport={counterpart} onClaimed={onClaimed} onClose={() => setClaimOpen(false)} />
+        <ClaimModal
+          match={match}
+          foundReport={counterpart}
+          onClaimed={() => {
+            setClaimed(true);
+            onClaimed?.();
+          }}
+          onClose={() => setClaimOpen(false)}
+        />
       )}
 
       <div className="thread-connector">

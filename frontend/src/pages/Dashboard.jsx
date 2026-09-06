@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { listReports, escalateStale, showToast } from '../api/client';
+import { listReports, escalateStale, showToast, getStoredToken } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import NoticeCard from '../components/NoticeCard';
 
@@ -73,6 +73,10 @@ export default function Dashboard({ reportType }) {
     };
   }, [reportType]);
 
+  function handleDeleted(id) {
+    setReports((prev) => prev.filter((r) => r.id !== id));
+  }
+
   async function handleEscalationCheck() {
     // Already filtered -> this press just turns the filter back off.
     if (escalationOn) {
@@ -116,7 +120,7 @@ export default function Dashboard({ reportType }) {
           {!loading && !error && <span className="dashboard-count">{visibleReports.length}</span>}
         </h1>
         <div className="dashboard-head-actions">
-          {reportType === 'found' && (
+          {reportType === 'found' && user?.is_admin && (
             <button
               type="button"
               className={`escalation-check-btn${escalationOn ? ' escalation-check-btn--on' : ''}`}
@@ -152,15 +156,18 @@ export default function Dashboard({ reportType }) {
         {visibleReports.map((report, i) => (
           <div key={report.id} style={{ '--card-index': i }}>
             {/*
-              Deliberately NOT passing currentUserId/token here: on the
-              shared Lost/Found tabs, nobody should see a report's id just
-              because they filed it -- that's reserved for their own
-              Profile page. Only isAdmin is passed, so NoticeCard's
-              canSeeReportId (isAdmin || isOwner) only ever resolves true
-              here for an admin, regardless of who reported it.
+              For a regular user these tabs are their own reports only (the
+              backend scopes GET /reports/ to the caller unless they're an
+              admin), so passing currentUserId/token here is what gives them
+              the report id + Delete on their cards. An admin sees everyone's
+              reports, and NoticeCard's canSeeReportId (isAdmin || isOwner)
+              still shows the id for all of them via isAdmin.
             */}
             <NoticeCard
               report={report}
+              currentUserId={user?.id}
+              token={getStoredToken()}
+              onDeleted={handleDeleted}
               // "Find matches" only makes sense on the Lost side -- a lost
               // reporter is the one who goes looking for a matching found
               // item. On Found, there's nothing for the finder to do here

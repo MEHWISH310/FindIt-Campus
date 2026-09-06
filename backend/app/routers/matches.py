@@ -670,7 +670,7 @@ async def verify_claim(
         verified=True,
         message=(
             f"Verified! Go collect this item from admin"
-            f"{f' at {found_report.collection_point}' if found_report.collection_point else ''}."
+            f"{f' at Building {found_report.collection_point.value}' if found_report.collection_point else ''}."
         ),
         match=_build_match_out(match, db, user),
         custody_record=None,

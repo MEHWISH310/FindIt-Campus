@@ -47,7 +47,7 @@ from app.matching.embeddings import encode_text, encode_images
 from app.matching.redaction import redact_photo, originals_dir
 from app.realtime import sio
 from app.models.user import User
-from app.routers.auth import get_current_user, get_current_user_optional
+from app.routers.auth import get_current_user, get_current_user_optional, require_admin
 from app.routers.matches import run_matching_and_notify
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -273,6 +273,17 @@ def list_reports(
     viewer: User | None = Depends(get_current_user_optional),
 ):
     query = db.query(Report)
+
+    # The Lost/Found pages are a personal view for regular users: they only
+    # ever see the reports they filed themselves. Browsing everyone's
+    # reports is an admin-only capability (the admin dashboard). Anonymous
+    # callers get nothing -- every Lost/Found route sits behind login.
+    is_admin = viewer is not None and viewer.is_admin == "true"
+    if not is_admin:
+        if viewer is None:
+            return []
+        query = query.filter(Report.reporter_id == viewer.id)
+
     if report_type:
         query = query.filter(Report.report_type == report_type)
 
@@ -346,15 +357,19 @@ def delete_report(
 
 
 @router.post("/escalate-stale", response_model=List[ReportOut])
-async def escalate_stale_high_risk(db: Session = Depends(get_db)):
+async def escalate_stale_high_risk(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     """
     Finds FOUND high-risk reports (ID/phone/academic docs) that have sat
     OPEN and unclaimed for ESCALATION_DAYS_THRESHOLD+ days, and flips their
     status to ESCALATED so staff can prioritize following up.
 
-    No cron/scheduler is wired into this stack yet -- this is triggered
-    manually via the "Run escalation check" button on the frontend
-    dashboard (or could be hooked into a scheduled task later).
+    Admin-only -- it's a moderation action that mutates report state, and
+    the "Run escalation check" button that triggers it only shows on the
+    admin dashboard. No cron/scheduler is wired into this stack yet (could
+    be hooked into a scheduled task later).
     """
     cutoff = datetime.utcnow() - timedelta(days=ESCALATION_DAYS_THRESHOLD)
 
