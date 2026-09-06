@@ -13,6 +13,7 @@ embedding is filled in moments later.
 """
 
 import asyncio
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -47,8 +48,11 @@ from app.matching.redaction import redact_photo, originals_dir
 from app.realtime import sio
 from app.models.user import User
 from app.routers.auth import get_current_user, get_current_user_optional
+from app.routers.matches import run_matching_and_notify
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+logger = logging.getLogger("findit.reports")
 
 # Only accept real image types -- anything else gets rejected before it
 # ever touches disk or the CLIP model.
@@ -188,6 +192,23 @@ async def create_report(
             "is_high_risk": report.is_high_risk == "true",
         },
     )
+
+    # Run the matching pipeline exactly once, right now, against whatever
+    # OPEN opposite-type reports already exist -- and send the one-time
+    # "possible match" ping/email if a strong candidate turns up. This is
+    # the ONLY place that ever triggers that notification (see
+    # run_matching_and_notify's docstring in matches.py): visiting the
+    # matches page later just recomputes/displays the same Match rows and
+    # never notifies again, so a reporter checking back repeatedly can't
+    # cause repeat emails for the same match.
+    #
+    # Wrapped so a matching failure (e.g. a bad embedding, a transient DB
+    # hiccup) can't take down report creation itself -- the report is
+    # already safely saved at this point regardless.
+    try:
+        await run_matching_and_notify(report, db)
+    except Exception:
+        logger.exception("Matching pipeline failed for newly created report %s", report.id)
 
     return _serialize_report(report, user, db)
 

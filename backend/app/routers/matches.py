@@ -1,15 +1,19 @@
 """
-POST /matches/find/{report_id} runs the actual matching pipeline:
-  1. pull the report + every opposite-type OPEN report
-  2. score each pair with fusion.composite_score()
-  3. save the results as Match rows, sorted best-first -- reusing any
-     Match row that already exists for a given lost/found pair instead
-     of inserting a duplicate every time this endpoint is called (e.g.
-     every time someone opens/refreshes the matches page)
+POST /matches/find/{report_id} returns this report's current ranked
+matches -- recomputing scores against whatever OPEN opposite-type reports
+exist right now, and upserting the results as Match rows (reusing any row
+that already exists for a given lost/found pair instead of inserting a
+duplicate every time this endpoint is called, e.g. every time someone
+opens/refreshes the matches page).
 
-The real-time ping and "possible match" email only fire the first time
-a given pair becomes the top match, not on every subsequent call -- see
-the notes on the notification block below.
+Notification (the real-time "match found" ping + the "possible match"
+email) is deliberately NOT part of that endpoint anymore -- it only ever
+fires once, right when a report is created (see reports.py's
+create_report -> run_matching_and_notify below). Otherwise every visit to
+the matches page would re-trigger a notification for the same match, and
+a handful of students opening the page a few times in a day meant a
+handful of duplicate emails for the exact same match -- see the docstring
+on find_matches and run_matching_and_notify for the split.
 
 Calibration (turning raw_score into a probability) loads a persisted,
 pre-fitted MatchCalibrator from disk if one exists (see
@@ -181,33 +185,37 @@ def _disambiguation_question(candidate: Report) -> str:
     return f"A {descriptor} found near {where} around {when}. Is this yours?"
 
 
-@router.get("/{match_id}", response_model=MatchOut)
-def get_match(
-    match_id: str,
-    db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user_optional),
-):
-    """Fetch a single match. Logged in as the lost reporter of a CONFIRMED
-    match -> found_contact is filled in. Logged in as the found reporter
-    of a CONFIRMED match -> claimant_info is filled in. Everyone else
-    (including anonymous callers) gets both as null -- see
-    _build_match_out."""
-    match = db.query(Match).filter(Match.id == match_id).first()
-    if not match:
-        raise HTTPException(404, "Match not found")
-    return _build_match_out(match, db, user)
+def _compute_and_save_matches(report: Report, db: Session) -> dict:
+    """
+    Runs the actual matching pipeline for `report` against every OPEN
+    report of the opposite type, scores each pair, and upserts Match rows.
 
+    Returns a dict with everything a caller might need:
+      - saved_matches: the top-5 Match rows (for the matches page)
+      - scored: the full sorted (candidate, result) list, used to decide
+        whether a notification is warranted
+      - needs_disambiguation / top_match_is_new: same purpose
 
-@router.post("/find/{report_id}", response_model=List[MatchOut])
-async def find_matches(report_id: str, db: Session = Depends(get_db)):
-    report = db.query(Report).filter(Report.id == report_id).first()
-    if not report:
-        raise HTTPException(404, "Report not found")
-
+    Deliberately has NO side effects beyond the DB (no email, no socket
+    ping) -- see _notify_top_match for that, and see find_matches vs.
+    run_matching_and_notify below for who's allowed to call it.
+    """
     opposite_type = ReportType.FOUND if report.report_type == ReportType.LOST else ReportType.LOST
     candidates = (
         db.query(Report)
-        .filter(Report.report_type == opposite_type, Report.status == ReportStatus.OPEN)
+        .filter(
+            Report.report_type == opposite_type,
+            Report.status == ReportStatus.OPEN,
+            # A reporter's own lost/found reports should never be offered
+            # to each other as a match -- e.g. someone testing the flow by
+            # filing both sides for the same item, or a mistaken
+            # duplicate report, isn't a genuine "someone else found your
+            # item" case and shouldn't surface a claim flow against
+            # yourself. Every report is required to have a reporter_id
+            # (login is required to create one), so this is a plain
+            # not-equal rather than needing to special-case nulls.
+            Report.reporter_id != report.reporter_id,
+        )
         .all()
     )
 
@@ -253,12 +261,11 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     needs_disambiguation = len(competing_ids) >= 2
 
     # Dedupe against matches already saved for this report (from an
-    # earlier call to this same endpoint -- e.g. someone just refreshing
+    # earlier call to this same pipeline -- e.g. someone just refreshing
     # the matches page). Without this, every single page-load created
-    # brand-new duplicate Match rows for the same lost/found pair AND
-    # re-sent the "possible match" email every time, regardless of
-    # whether anything had actually changed -- that's what was causing a
-    # dozens-of-emails-in-minutes spam storm from repeat visits/refreshes.
+    # brand-new duplicate Match rows for the same lost/found pair, which
+    # is what was causing a duplicate-match/email spam storm from repeat
+    # visits/refreshes before this was fixed.
     existing_by_pair = {
         (m.lost_report_id, m.found_report_id): m
         for m in db.query(Match)
@@ -325,10 +332,8 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
             db.add(match)
 
         if i == 0:
-            # A reopened rejected match reappearing as the top candidate is
-            # genuinely new news -- the notification below should treat it
-            # the same as a first-time match, not stay silent just because
-            # a Match row already existed for this pair.
+            # A reopened rejected match resurfacing as the top candidate is
+            # genuinely new news for notification purposes.
             top_match_is_new = is_new or was_rejected
         saved_matches.append(match)
 
@@ -336,49 +341,123 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
     for m in saved_matches:
         db.refresh(m)
 
-    # Real-time "match found" ping + email -- only for a genuinely strong
-    # top candidate, AND only the first time this exact pair shows up as
-    # the top match. Otherwise every subsequent page visit for the same
-    # report (by the owner, or by anyone who can reach the matches page)
-    # would re-trigger both, which is what caused the email spam.
-    if scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD and top_match_is_new:
-        top_candidate, top_result = scored[0]
-        top_probability = _calibrator.predict_proba(top_result["score"]) if _calibrator else None
-        await sio.emit(
-            "match:found",
-            {
-                "report_id": str(report.id),
-                "report_title": report.title,
-                "score": round(top_result["score"], 3),
-                "probability": round(top_probability, 3) if top_probability is not None else None,
-                "needs_disambiguation": needs_disambiguation,
-            },
-        )
+    return {
+        "saved_matches": saved_matches,
+        "scored": scored,
+        "needs_disambiguation": needs_disambiguation,
+        "top_match_is_new": top_match_is_new,
+    }
 
-        # Email the LOST-side reporter -- whichever of report/top_candidate
-        # is the lost report, since they're the one who should hear "a
-        # similar item was found", regardless of which side triggered this
-        # search. Best-effort: a missing reporter_id/user (e.g. an older
-        # report from before auth was wired up) just means no email, not
-        # an error for the caller.
-        lost_report = report if report.report_type == ReportType.LOST else top_candidate
-        if lost_report.reporter_id:
-            lost_reporter = db.query(User).filter(User.id == lost_report.reporter_id).first()
-            if lost_reporter:
-                send_email(
-                    to_email=lost_reporter.email,
-                    subject="A possible match was found for your lost item",
-                    body=(
-                        f"Hi {lost_reporter.name or ''},\n\n"
-                        f"An item similar to what you reported lost (\"{lost_report.title}\") "
-                        "has been found and matched by FindIt Campus.\n\n"
-                        f"Check the site for details: {settings.frontend_base_url}/matches/{lost_report.id}\n\n"
-                        "If it looks right, you can claim it there by answering the "
-                        "finder's verification question."
-                    ),
-                )
 
-    return saved_matches
+async def _notify_top_match(report: Report, computed: dict, db: Session):
+    """
+    Sends the real-time "match found" ping + the "possible match" email --
+    only for a genuinely strong top candidate, and only when the caller
+    has determined this is worth notifying about at all (see
+    run_matching_and_notify, the only caller). Split out from
+    _compute_and_save_matches so that recomputing/displaying matches
+    (find_matches) never has to go anywhere near sending an email.
+    """
+    scored = computed["scored"]
+    top_match_is_new = computed["top_match_is_new"]
+    needs_disambiguation = computed["needs_disambiguation"]
+
+    if not (scored and scored[0][1]["score"] >= NOTIFY_SCORE_THRESHOLD and top_match_is_new):
+        return
+
+    top_candidate, top_result = scored[0]
+    top_probability = _calibrator.predict_proba(top_result["score"]) if _calibrator else None
+
+    await sio.emit(
+        "match:found",
+        {
+            "report_id": str(report.id),
+            "report_title": report.title,
+            "score": round(top_result["score"], 3),
+            "probability": round(top_probability, 3) if top_probability is not None else None,
+            "needs_disambiguation": needs_disambiguation,
+        },
+    )
+
+    # Email the LOST-side reporter -- whichever of report/top_candidate is
+    # the lost report, since they're the one who should hear "a similar
+    # item was found", regardless of which side triggered this search.
+    # Best-effort: a missing reporter_id/user (e.g. an older report from
+    # before auth was wired up) just means no email, not an error.
+    lost_report = report if report.report_type == ReportType.LOST else top_candidate
+    if lost_report.reporter_id:
+        lost_reporter = db.query(User).filter(User.id == lost_report.reporter_id).first()
+        if lost_reporter:
+            send_email(
+                to_email=lost_reporter.email,
+                subject="A possible match was found for your lost item",
+                body=(
+                    f"Hi {lost_reporter.name or ''},\n\n"
+                    f"An item similar to what you reported lost (\"{lost_report.title}\") "
+                    "has been found and matched by FindIt Campus.\n\n"
+                    f"Check the site for details: {settings.frontend_base_url}/matches/{lost_report.id}\n\n"
+                    "If it looks right, you can claim it there by answering the "
+                    "finder's verification question."
+                ),
+            )
+
+
+async def run_matching_and_notify(report: Report, db: Session):
+    """
+    Called exactly once, right after a report is created (see
+    reports.py's create_report) -- computes matches for the brand-new
+    report and, if a strong candidate comes back, sends the one-time
+    "possible match" ping/email.
+
+    This is the ONLY place that ever notifies. find_matches below
+    recomputes/reuses the same Match rows every time someone opens or
+    refreshes the matches page, but it never calls this -- so browsing
+    the page repeatedly (which is exactly what happens when a reporter
+    keeps checking back) can never trigger a second email for a match
+    they've already been told about.
+    """
+    computed = _compute_and_save_matches(report, db)
+    await _notify_top_match(report, computed, db)
+
+
+@router.get("/{match_id}", response_model=MatchOut)
+def get_match(
+    match_id: str,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
+    """Fetch a single match. Logged in as the lost reporter of a CONFIRMED
+    match -> found_contact is filled in. Logged in as the found reporter
+    of a CONFIRMED match -> claimant_info is filled in. Everyone else
+    (including anonymous callers) gets both as null -- see
+    _build_match_out."""
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+    return _build_match_out(match, db, user)
+
+
+@router.post("/find/{report_id}", response_model=List[MatchOut])
+def find_matches(report_id: str, db: Session = Depends(get_db)):
+    """
+    Returns this report's current ranked matches, recomputing scores
+    against whatever OPEN opposite-type reports exist right now, and
+    upserting the results as Match rows.
+
+    Deliberately does NOT send any notification (email or real-time ping)
+    -- that only ever happens once, at report-creation time (see
+    run_matching_and_notify above, called from reports.py's
+    create_report). This endpoint backs the "Matches" page and the
+    Lost-side "Find matches" link, both of which a reporter can open or
+    refresh as many times as they like without spamming themselves (or
+    anyone else) with duplicate emails for a match they've already seen.
+    """
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(404, "Report not found")
+
+    computed = _compute_and_save_matches(report, db)
+    return computed["saved_matches"]
 
 
 @router.post("/{match_id}/check-answer", response_model=CheckAnswerResponse)
