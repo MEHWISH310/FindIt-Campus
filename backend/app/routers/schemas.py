@@ -178,6 +178,12 @@ class MatchOut(BaseModel):
     # matches.py's competing_cluster()) -- the frontend shows this as a
     # forced-choice question instead of just a bare score. Null otherwise.
     disambiguation_question: Optional[str] = None
+    # How many wrong claim-answer attempts have been used against this
+    # match so far (see matches.py's MAX_CLAIM_ATTEMPTS). The claim modal
+    # uses this to open straight into the locked state -- instead of
+    # showing an answer box that will just fail -- when a claimant already
+    # burned all their attempts in a previous session.
+    failed_claim_attempts: int = 0
     # Both null unless the requester is authorized to see them -- see the
     # FoundContactOut / ClaimantInfoOut docstrings above.
     found_contact: Optional[FoundContactOut] = None

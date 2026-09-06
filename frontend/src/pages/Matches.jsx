@@ -5,6 +5,11 @@ import NoticeCard from '../components/NoticeCard';
 import Modal from '../components/Modal';
 import { useAuth } from '../context/AuthContext';
 
+// Mirrors matches.py's MAX_CLAIM_ATTEMPTS -- used purely to decide whether
+// a match handed to ClaimModal already has no attempts left, so the modal
+// can open straight into the locked view instead of the answer box.
+const MAX_CLAIM_ATTEMPTS = 3;
+
 function isNeedsReview(match) {
   return match.status === 'NEEDS_DISAMBIGUATION' || match.status === 'needs_disambiguation';
 }
@@ -50,9 +55,15 @@ function Required() {
  *      included) to POST /matches/{id}/verify, which is what actually
  *      records the claim -- it re-checks the answer itself too, so step 1
  *      is a UX nicety, not the real security boundary.
+ *
+ * If `match.failed_claim_attempts` already shows every attempt used up
+ * (e.g. the claimant closed the modal after locking it, then reopened it
+ * later), the modal opens straight into the locked view -- there's no
+ * point showing an answer box that the backend will just reject again.
  */
 function ClaimModal({ match, foundReport, onClaimed, onClose }) {
   const { user } = useAuth();
+  const alreadyLocked = (match.failed_claim_attempts ?? 0) >= MAX_CLAIM_ATTEMPTS;
   const [step, setStep] = useState('answer'); // 'answer' | 'details'
   const [claimantName, setClaimantName] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
@@ -60,7 +71,7 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
   const [hiddenAnswer, setHiddenAnswer] = useState('');
   const [checking, setChecking] = useState(false);
   const [answerError, setAnswerError] = useState(null);
-  const [locked, setLocked] = useState(false); // ran out of attempts -> admin desk
+  const [locked, setLocked] = useState(alreadyLocked); // ran out of attempts -> admin desk
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { verified, message } | null
   const [error, setError] = useState(null);
@@ -131,13 +142,15 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
         </div>
       ) : locked ? (
         <div className="claim-form">
+          {/* The alarming part -- red, on its own -- and the calmer
+              next-step instruction underneath in normal text, instead of
+              both crammed into one red block or repeated twice. */}
           <p className="claim-form-error">
-            {answerError ||
-              "Verification failed -- you've used all your attempts."}
+            Verification failed! You've used all {MAX_CLAIM_ATTEMPTS} attempts.
           </p>
           <p className="claim-form-question">
-            If this item really is yours, take your ID to the lost &amp; found
-            admin desk. An admin can verify you in person and release it.
+            If this item is really yours, go to the lost &amp; found admin
+            desk to verify in person.
           </p>
           <div className="claim-form-actions">
             <button type="button" className="claim-form-cancel" onClick={onClose}>
@@ -175,8 +188,6 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
         </form>
       ) : (
         <form className="claim-form" onSubmit={handleSubmit}>
-          <p className="claim-form-question">Answer verified! Now fill in your details to complete the claim.</p>
-
           <label>
             <span>Your name<Required /></span>
             <input
