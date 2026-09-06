@@ -13,11 +13,9 @@ import Matches from './pages/Matches';
 import ClaimedItems from './pages/ClaimedItems';
 import MyClaimedItems from './pages/MyClaimedItems';
 import Login from './pages/Login';
-import Profile from './pages/Profile';
 import RequestAccess from './pages/RequestAccess';
 import ForgotPassword from './pages/ForgotPassword';
 import SetPassword from './pages/SetPassword';
-import ChangePassword from './pages/ChangePassword';
 import Admin from './pages/Admin';
 import './styles/global.css';
 
@@ -82,26 +80,10 @@ export default function App() {
                 }
               />
               <Route
-                path="/me"
-                element={
-                  <ProtectedRoute>
-                    <Profile />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
                 path="/set-password"
                 element={
                   <ProtectedRoute>
                     <SetPassword />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/change-password"
-                element={
-                  <ProtectedRoute>
-                    <ChangePassword />
                   </ProtectedRoute>
                 }
               />

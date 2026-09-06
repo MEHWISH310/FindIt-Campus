@@ -346,6 +346,70 @@ button {
   display: none;
 }
 
+/* --- Account dropdown (name button in the header) ----------------- */
+.account-menu {
+  position: relative;
+}
+
+.account-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+}
+
+.account-menu-caret {
+  transition: transform 0.2s var(--ease);
+  opacity: 0.7;
+}
+
+.account-menu-caret--open {
+  transform: rotate(180deg);
+}
+
+.account-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  animation: card-in 0.16s var(--ease);
+}
+
+.account-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.account-menu-item:hover {
+  background: var(--surface-hover);
+}
+
+.account-menu-item--danger {
+  color: var(--lost);
+}
+
+.account-menu-item--danger:hover {
+  background: var(--lost-soft);
+}
+
 .theme-toggle {
   border: 1px solid var(--border);
   background: var(--surface);
@@ -429,6 +493,12 @@ button {
   .site-actions .header-btn {
     display: none;
   }
+
+  /* ...but the account menu (change password / log out) must stay
+     reachable on mobile -- it's the only way out of the session. */
+  .site-actions .account-menu-trigger {
+    display: inline-flex;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -445,13 +515,21 @@ button {
   max-width: 1120px;
   margin: 0 auto;
   padding: 36px 24px 28px;
-  display: grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr;
-  gap: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 32px 72px;
 }
 
 .site-footer-brand {
-  max-width: 280px;
+  flex: 1 1 260px;
+  max-width: 340px;
+}
+
+.site-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px 72px;
 }
 
 .site-footer-logo {
@@ -517,19 +595,23 @@ button {
   }
 
   .site-footer-inner {
-    grid-template-columns: 1fr 1fr;
-    gap: 28px 24px;
+    gap: 28px 40px;
   }
 
   .site-footer-brand {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
     max-width: none;
+  }
+
+  .site-footer-nav {
+    flex: 1 1 auto;
+    gap: 28px 48px;
   }
 }
 
 @media (max-width: 420px) {
-  .site-footer-inner {
-    grid-template-columns: 1fr;
+  .site-footer-nav {
+    gap: 24px 32px;
   }
 }
 
@@ -1281,79 +1363,8 @@ button {
   font-size: 0.85rem;
 }
 
-/* --- Profile / "My account" page: pages/Profile.jsx ---------------- */
-
-.profile {
-  padding: 48px 24px 100px;
-}
-
-.profile .dashboard-head {
-  align-items: flex-start;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 24px;
-}
-
-.profile-name-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.profile-name {
-  font-family: var(--font-display);
-  font-size: 1.7rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.profile-edit-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
-}
-
-.profile-edit-btn:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
-}
-
-.profile-email {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.profile-section {
-  margin-top: 44px;
-}
-
-/* Lost + Found sit side by side while each holds at most one card, so a
-   lone card doesn't leave half the row empty. Drops back to stacked
-   full-width via the JS toggle the moment either list has 2+ cards. */
-.profile-reports--split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 32px;
-  align-items: start;
-}
-
-@media (max-width: 720px) {
-  .profile-reports--split {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-}
-
-/* Right-aligned button row inside the name / password modals. */
+/* Right-aligned button row inside the header's modals (change password,
+   log out). */
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -1374,37 +1385,8 @@ button {
   padding: 0 22px;
 }
 
-.profile-section-title {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 18px;
-}
-
-.profile-section-title--lost {
-  color: var(--lost);
-}
-
-.profile-section-title--found {
-  color: var(--found);
-}
-
-.profile-empty {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  padding: 8px 0;
-  margin: 0;
-}
-
-.profile-empty--error {
-  color: var(--lost);
-}
-
 /* Vertical rhythm for a form with no card chrome -- used by
-   <ChangePasswordForm bare /> inside the "Reset password" modal. */
+   <ChangePasswordForm bare /> inside the "Change password" modal. */
 .stacked-form {
   display: flex;
   flex-direction: column;
@@ -1491,14 +1473,6 @@ button {
 @media (max-width: 480px) {
   .page-shell {
     padding: 0 16px;
-  }
-
-  .profile {
-    padding: 32px 16px 72px;
-  }
-
-  .profile .dashboard-head {
-    flex-direction: column;
   }
 
   .dashboard-grid {
@@ -2625,24 +2599,127 @@ button {
 }
 
 .claim-form--success {
-  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
   border-radius: var(--radius-sm);
   background: var(--found-soft);
+  border: 1px solid var(--found);
   color: var(--found);
 }
 
 .claim-form--success p {
-  margin: 0 0 10px;
-  font-size: 0.88rem;
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
 }
 
+.claim-form--success .claim-form-actions {
+  margin-top: 0;
+  justify-content: flex-end;
+}
+
+.claim-form-done {
+  background: var(--found);
+  color: var(--surface);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 20px;
+  height: 38px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.claim-form-done:hover {
+  filter: brightness(1.05);
+}
+
+.claim-form-done:focus-visible {
+  outline: 2px solid var(--found);
+  outline-offset: 2px;
+}
+
+/* Status strip shown under a match's card once it's claimed/verified.
+   Rendered as a sibling of .notice-card inside .thread-row-content, so it
+   spans the full content column as a flush footer banner rather than a
+   stray line of green text. */
 .claim-form-success-note {
-  margin: 12px 0 0;
-  font-size: 0.85rem;
+  margin: 0;
+  padding: 12px 18px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--found);
+  background: var(--found-soft);
+  border-top: 1px solid color-mix(in srgb, var(--found) 30%, transparent);
+}
+
+.claim-form-success-note + .claim-form-success-note {
+  border-top-color: color-mix(in srgb, var(--found) 15%, transparent);
+}
+
+.claim-form-success-note strong {
   color: var(--found);
 }
 
 /* ---- Claimed items page ---- */
+
+/* One-line lede under the "Claimed items" heading on the non-admin view.
+   Pulls up close to the title (the shared .dashboard-head bottom margin
+   is meant for the table/status that normally follows it). */
+.claimed-items--mine .dashboard-head {
+  margin-bottom: 10px;
+}
+
+.claimed-items-intro {
+  margin: 0 0 28px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Sub-sections on the non-admin Claimed page: "Things I claimed" and
+   "Things claimed by others in the last 7 days". */
+.claimed-section {
+  margin-top: 36px;
+}
+
+.claimed-section:first-of-type {
+  margin-top: 0;
+}
+
+.claimed-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Pickup-stage pill in the "Things I claimed" table. */
+.claim-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.claim-status--pending {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.claim-status--completed {
+  color: var(--found);
+  background: var(--found-soft);
+}
 
 .custody-table-wrap {
   overflow-x: auto;

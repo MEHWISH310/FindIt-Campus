@@ -3,9 +3,8 @@ import { changePassword, ApiError } from '../api/client';
 import PasswordInput from './PasswordInput';
 
 /**
- * The change-password form on its own -- no page chrome. Both entry points
- * (the profile page's "Reset password" modal and the standalone
- * /change-password route) render it with `bare`, so the UI never drifts.
+ * The change-password form on its own -- no page chrome. Rendered with
+ * `bare` inside the header's "Change password" account-menu modal.
  *
  * bare: drop the bordered card styling + built-in heading, so the caller
  *   can slot it into an existing container (a modal, a section).
