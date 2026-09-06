@@ -178,7 +178,7 @@ def _disambiguation_question(candidate: Report) -> str:
     descriptor = " ".join(part for part in (candidate.color, candidate.brand) if part) or candidate.category or "item"
     where = candidate.location_name or "an unspecified location"
     when = candidate.item_datetime.strftime("%b %d, %I:%M %p") if candidate.item_datetime else "an unspecified time"
-    return f"A {descriptor} found near {where} around {when} -- is this yours?"
+    return f"A {descriptor} found near {where} around {when}. Is this yours?"
 
 
 @router.get("/{match_id}", response_model=MatchOut)

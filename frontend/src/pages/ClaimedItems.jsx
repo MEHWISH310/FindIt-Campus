@@ -36,11 +36,6 @@ export default function ClaimedItems() {
         </h1>
       </div>
 
-      <p className="dashboard-status" style={{ marginTop: 0 }}>
-        Every confirmed handover, most recent first. This is the audit trail written
-        when a claimant answers a found report's verification question correctly.
-      </p>
-
       {error && <p className="dashboard-status dashboard-status--error">Couldn't reach the backend: {error}</p>}
       {!records && !error && <p className="dashboard-status status-pulse">Loading claimed items…</p>}
       {records && records.length === 0 && (

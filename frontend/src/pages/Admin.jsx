@@ -69,7 +69,7 @@ function AdminVerifyForm({ onVerified }) {
           only do it once you've checked their ID against the item.
         </p>
         <label className="field">
-          <span>Match ref *</span>
+          <span>Match ref*</span>
           <input
             value={form.match_id}
             onChange={(e) => set('match_id', e.target.value)}
@@ -77,12 +77,12 @@ function AdminVerifyForm({ onVerified }) {
           />
         </label>
         <label className="field">
-          <span>Claimant name *</span>
+          <span>Claimant name*</span>
           <input value={form.claimant_name} onChange={(e) => set('claimant_name', e.target.value)} />
         </label>
         <div className="field-row">
           <label className="field">
-            <span>Registration number *</span>
+            <span>Registration number*</span>
             <input
               value={form.claimant_registration_number}
               onChange={(e) => set('claimant_registration_number', e.target.value)}
@@ -91,7 +91,7 @@ function AdminVerifyForm({ onVerified }) {
             />
           </label>
           <label className="field">
-            <span>Email *</span>
+            <span>Email*</span>
             <input
               type="email"
               value={form.claimant_email}
@@ -204,13 +204,6 @@ export default function Admin() {
           {pickups && <span className="dashboard-count">{pickups.length}</span>}
         </h1>
       </div>
-
-      <p className="dashboard-status" style={{ marginTop: 0 }}>
-        Everyone here has already passed verification — online, or in person with an
-        admin. When they come to collect, match their name to the Report ID, hand the
-        item over, then click "Mark handed over", that closes both reports and emails
-        the finder to confirm the item's been returned.
-      </p>
 
       <AdminVerifyForm onVerified={reload} />
 

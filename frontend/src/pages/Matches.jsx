@@ -30,7 +30,7 @@ const MIN_MATCH_PERCENT = 50;
 
 // Small red-asterisk marker for required-field labels.
 function Required() {
-  return <span style={{ color: '#ef4444' }}> *</span>;
+  return <span style={{ color: '#ef4444' }}>*</span>;
 }
 
 /**
@@ -252,6 +252,13 @@ function DisambiguationCandidate({ match, sourceId, onChosen }) {
 
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
 
+  const hasProbability = match.match_probability != null;
+  const pct = hasProbability
+    ? Math.round(match.match_probability * 100)
+    : match.raw_score != null
+      ? Math.round(match.raw_score * 100)
+      : null;
+
   useEffect(() => {
     let cancelled = false;
     getReport(counterpartId)
@@ -286,6 +293,14 @@ function DisambiguationCandidate({ match, sourceId, onChosen }) {
         <NoticeCard report={counterpart} compact />
       ) : (
         <div className="thread-loading">Couldn't load that report.</div>
+      )}
+      {pct != null && (
+        <span
+          className={`score-pill ${!hasProbability ? 'score-pill--estimated' : ''} mono disambig-score`}
+          title={!hasProbability ? 'Estimated from raw score, not yet calibrated against confirmed matches' : undefined}
+        >
+          {pct}% match
+        </span>
       )}
       {match.disambiguation_question && <p className="disambig-question">{match.disambiguation_question}</p>}
       {error && <p className="claim-form-error">{error}</p>}
@@ -508,7 +523,7 @@ export default function Matches() {
 
   return (
     <div className="matches-page">
-      <Link to="/" className="back-link">
+      <Link to={sourceReport?.report_type === 'found' ? '/found' : '/lost'} className="back-link">
         ← Back
       </Link>
 

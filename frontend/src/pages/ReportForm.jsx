@@ -274,7 +274,7 @@ export default function ReportForm() {
 
   return (
     <div className="report-page report-page--wide">
-      <Link to="/" className="back-link">
+      <Link to={isFound ? '/found' : '/lost'} className="back-link">
         ← Back
       </Link>
 
@@ -290,7 +290,7 @@ export default function ReportForm() {
         </h1>
 
         <label className="field">
-          <span>Title *</span>
+          <span>Title*</span>
           <input
             required
             value={form.title}
@@ -300,7 +300,7 @@ export default function ReportForm() {
         </label>
 
         <label className="field">
-          <span>{isFound ? 'Public description' : 'Description'} *</span>
+          <span>{isFound ? 'Public description' : 'Description'}*</span>
           <textarea
             required
             rows={3}
@@ -353,7 +353,7 @@ export default function ReportForm() {
 
         <div className="field-row">
           <label className="field">
-            <span>Category *</span>
+            <span>Category*</span>
             <select
               required
               value={form.category}
@@ -382,12 +382,12 @@ export default function ReportForm() {
         </div>
 
         <label className="field">
-          <span>Where *</span>
+          <span>Where*</span>
           <input
             required
             value={form.location_name}
             onChange={(e) => update('location_name', e.target.value)}
-            placeholder="e.g. Central Library"
+            placeholder={isFound ? 'e.g. Central Library' : "e.g. Central Library, or 'Not known' if unsure"}
           />
         </label>
 
@@ -417,7 +417,7 @@ export default function ReportForm() {
 
         {!isFound && (
           <label className="field">
-            <span>When you lost it *</span>
+            <span>When you lost it*</span>
             <input
               type="datetime-local"
               required
@@ -439,7 +439,7 @@ export default function ReportForm() {
               not something from the description.
             </p>
             <label className="field">
-              <span>Verification question *</span>
+              <span>Verification question*</span>
               <input
                 required
                 value={form.hidden_question}
@@ -448,7 +448,7 @@ export default function ReportForm() {
               />
             </label>
             <label className="field">
-              <span>Expected answer *</span>
+              <span>Expected answer*</span>
               <input
                 required
                 className={localLeak ? 'input-invalid' : ''}
@@ -467,7 +467,7 @@ export default function ReportForm() {
               ) : null}
             </label>
             <label className="field">
-              <span>Where you'll hand it to admin *</span>
+              <span>Where you'll hand it to admin*</span>
               <input
                 required
                 value={form.collection_point}

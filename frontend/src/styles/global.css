@@ -1477,8 +1477,14 @@ button {
 
 /* Pin the footer (timestamp / actions) to the bottom of the card so the
    extra height on shorter cards becomes empty space below the content
-   rather than a gap that leaves the footer floating mid-card. */
+   rather than a gap that leaves the footer floating mid-card. When the
+   report ID is shown it sits just above the footer line, so let it absorb
+   the slack instead and the footer trails directly beneath it. */
 .dashboard-grid .notice-card .notice-footer {
+  margin-top: auto;
+}
+
+.dashboard-grid .notice-card .notice-report-id {
   margin-top: auto;
 }
 
@@ -1637,6 +1643,12 @@ button {
   font-size: 0.76rem;
   color: var(--text-muted);
   font-style: italic;
+}
+
+.notice-report-id {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin: 0 0 8px;
 }
 
 .notice-title {
@@ -2364,6 +2376,18 @@ button {
 .disambig-candidate .notice-card {
   border: none;
   border-radius: 0;
+}
+
+/* The NoticeCard is only the top half of the candidate -- kill its
+   lift/shadow hover so hovering doesn't animate just that half. */
+.disambig-candidate .notice-card:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.disambig-score {
+  align-self: flex-start;
+  margin: 0 14px;
 }
 
 .disambig-question {

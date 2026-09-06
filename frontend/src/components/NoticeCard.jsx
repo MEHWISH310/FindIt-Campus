@@ -135,11 +135,6 @@ export default function NoticeCard({
           </span>
         )}
       </div>
-      {canSeeReportId && (
-        <p className="notice-report-id mono">
-          ID: {report.id}
-        </p>
-      )}
       <h3 className="notice-title">{report.title}</h3>
       {!compact && <p className="notice-desc">{report.description}</p>}
       {report.is_stale && !compact && (
@@ -161,6 +156,11 @@ export default function NoticeCard({
           </div>
         )}
       </dl>
+      {canSeeReportId && (
+        <p className="notice-report-id mono">
+          ID: {report.id}
+        </p>
+      )}
       <div className="notice-footer">
         <span>{timeAgo(report.created_at || report.item_datetime)}</span>
         {onFindMatches && report.status === 'open' && (
