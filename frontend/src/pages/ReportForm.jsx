@@ -264,7 +264,12 @@ export default function ReportForm() {
         }
       }
 
-      navigate(`/matches/${report.id}`);
+      // Found reports have nothing to do on the matches page anymore
+      // (matching runs automatically, no "Find matches" action on that
+      // side) -- send them straight back to the Found dashboard instead.
+      // Lost reports still go to their matches page, since that's how a
+      // lost reporter finds their item.
+      navigate(isFound ? '/found' : `/matches/${report.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong submitting the report.');
     } finally {

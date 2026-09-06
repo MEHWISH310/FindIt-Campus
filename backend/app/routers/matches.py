@@ -277,20 +277,40 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
 
         existing = existing_by_pair.get((lost_id, found_id))
         is_new = existing is None
+        was_rejected = existing is not None and existing.status == MatchStatus.REJECTED
 
         if existing:
             match = existing
             # Only refresh the score/signals if nobody's acted on this
-            # match yet -- once it's VERIFIED/CONFIRMED/REJECTED, leave it
-            # alone instead of silently rewriting state out from under
-            # whatever the claimant/admin already did.
-            if match.status in (MatchStatus.CANDIDATE, MatchStatus.NEEDS_DISAMBIGUATION):
+            # match yet -- once it's VERIFIED/CONFIRMED, leave it alone
+            # instead of silently rewriting state out from under whatever
+            # the claimant/admin already did.
+            #
+            # REJECTED is handled separately from that rule: it only ever
+            # comes from losing a disambiguation forced-choice, not from
+            # genuinely being a bad match. If `report` -- the one this
+            # lookup was actually called for -- is still OPEN, nothing
+            # about it was ever resolved: whatever the user picked instead
+            # must have since been deleted, or simply never got confirmed.
+            # In that case this candidate deserves another look instead of
+            # staying hidden forever. Gated on `report` specifically (not
+            # `candidate`) since that's the report find_matches runs for;
+            # if `report` already moved to MATCHED/RESOLVED through a
+            # different pair, its rejected leftovers are left alone.
+            reconsider = match.status in (MatchStatus.CANDIDATE, MatchStatus.NEEDS_DISAMBIGUATION) or (
+                match.status == MatchStatus.REJECTED and report.status == ReportStatus.OPEN
+            )
+            if reconsider:
                 match.raw_score = result["score"]
                 match.match_probability = match_probability
                 match.used_signals = result["used_signals"]
                 match.signal_weights = result["weights"]
                 match.status = MatchStatus.NEEDS_DISAMBIGUATION if in_cluster else MatchStatus.CANDIDATE
                 match.disambiguation_question = _disambiguation_question(candidate) if in_cluster else None
+                # Clear out the old "chosen"/"not chosen" verdict -- this
+                # candidate is back in play, not still carrying the result
+                # of a forced-choice that no longer reflects reality.
+                match.disambiguation_answer = None
         else:
             match = Match(
                 lost_report_id=lost_id,
@@ -305,7 +325,11 @@ async def find_matches(report_id: str, db: Session = Depends(get_db)):
             db.add(match)
 
         if i == 0:
-            top_match_is_new = is_new
+            # A reopened rejected match reappearing as the top candidate is
+            # genuinely new news -- the notification below should treat it
+            # the same as a first-time match, not stay silent just because
+            # a Match row already existed for this pair.
+            top_match_is_new = is_new or was_rejected
         saved_matches.append(match)
 
     db.commit()
