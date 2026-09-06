@@ -161,7 +161,15 @@ export default function Dashboard({ reportType }) {
             */}
             <NoticeCard
               report={report}
-              onFindMatches={() => navigate(`/matches/${report.id}`)}
+              // "Find matches" only makes sense on the Lost side -- a lost
+              // reporter is the one who goes looking for a matching found
+              // item. On Found, there's nothing for the finder to do here
+              // (matching runs automatically off their report), so the
+              // link is intentionally omitted rather than passed as a
+              // no-op.
+              onFindMatches={
+                reportType === 'lost' ? () => navigate(`/matches/${report.id}`) : undefined
+              }
               isAdmin={user?.is_admin}
             />
           </div>

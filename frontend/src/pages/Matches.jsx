@@ -175,7 +175,7 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
         </form>
       ) : (
         <form className="claim-form" onSubmit={handleSubmit}>
-          <p className="claim-form-question">Answer verified -- now fill in your details to complete the claim.</p>
+          <p className="claim-form-question">Answer verified! Now fill in your details to complete the claim.</p>
 
           <label>
             <span>Your name<Required /></span>
