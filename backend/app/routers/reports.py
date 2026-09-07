@@ -1,19 +1,15 @@
 """
 Endpoints for submitting and listing lost/found reports.
 
-Note: this computes the text embedding as part of report creation on a
-worker thread via asyncio.to_thread(), so it never blocks the event loop.
-
-The matching pipeline (run_matching_and_notify -- scoring against every
-open opposite-type report, upserting Match rows, and possibly sending a
-real-time ping + an email) used to be awaited inline here, which meant the
-reporter sat waiting for a full DB scan/scoring pass and a potential SMTP
-round-trip before they ever got their report back. It's now fired off as a
-background asyncio task (_run_matching_safely) right after the report is
-committed: the reporter gets an instant response, and matching/notifying
-happens moments later. The background task opens its own DB session,
-since the request's `db` session closes as soon as the response is
-returned.
+Note: this DOES compute the text embedding as part of report creation, but
+it now runs on a worker thread via asyncio.to_thread(), not on the event
+loop itself. That keeps report creation slightly slower for the one caller
+who has to wait for the embedding, but stops it from freezing the whole
+server for every other in-flight request (chatbot calls, other manual
+submissions, GET /reports/, etc.) while the model runs. At real scale,
+you'd still want to move this further -- into a background task or a
+queue like Celery -- so report creation returns instantly and the
+embedding is filled in moments later.
 """
 
 import asyncio
@@ -28,7 +24,7 @@ from sqlalchemy import case, and_
 from sqlalchemy.orm import Session
 from app.core.email import send_email
 from app.core.config import settings
-from app.db.session import get_db, SessionLocal
+from app.db.session import get_db
 from app.models.report import (
     Report,
     ReportType,
@@ -82,36 +78,6 @@ def _serialize_report(report: Report, viewer: User | None, db: Session) -> Repor
                 phone=reporter_user.phone,
             )
     return out
-
-
-async def _run_matching_safely(report_id: uuid.UUID):
-    """
-    Runs the matching pipeline (score against every open opposite-type
-    report, upsert Match rows, and -- if warranted -- send the real-time
-    "match found" ping and the "possible match" email) as a background
-    task, fully decoupled from the create_report request/response cycle.
-
-    Opens its own DB session because the request-scoped `db` (from
-    Depends(get_db)) is closed as soon as create_report returns -- by the
-    time this task actually runs, that session is gone.
-
-    Swallows and logs any failure here (bad embedding, transient DB
-    hiccup, SMTP failure, etc.) rather than letting it propagate: the
-    report itself is already safely committed regardless of whether
-    matching succeeds, and there's no request left waiting on this to
-    raise anything to.
-    """
-    db = SessionLocal()
-    try:
-        report = db.query(Report).filter(Report.id == report_id).first()
-        if report is None:
-            logger.warning("Report %s vanished before background matching ran", report_id)
-            return
-        await run_matching_and_notify(report, db)
-    except Exception:
-        logger.exception("Matching pipeline failed for report %s", report_id)
-    finally:
-        db.close()
 
 
 @router.post("/", response_model=ReportOut)
@@ -227,19 +193,24 @@ async def create_report(
         },
     )
 
-    # Build the response now, with the report already safely persisted --
-    # everything below this point (matching against existing open reports,
-    # possibly sending a "match found" ping/email) is fired off as a
-    # background task instead of being awaited here, so the reporter isn't
-    # stuck waiting on a full DB scan/scoring pass or an SMTP round-trip
-    # just to get a "your report was created" response back. See
-    # _run_matching_safely's docstring above for the full reasoning, and
-    # run_matching_and_notify's docstring in matches.py for why this is
-    # the ONLY place matching+notify ever gets triggered (as opposed to
-    # find_matches, which just recomputes/displays without notifying).
-    out = _serialize_report(report, user, db)
-    asyncio.create_task(_run_matching_safely(report.id))
-    return out
+    # Run the matching pipeline exactly once, right now, against whatever
+    # OPEN opposite-type reports already exist -- and send the one-time
+    # "possible match" ping/email if a strong candidate turns up. This is
+    # the ONLY place that ever triggers that notification (see
+    # run_matching_and_notify's docstring in matches.py): visiting the
+    # matches page later just recomputes/displays the same Match rows and
+    # never notifies again, so a reporter checking back repeatedly can't
+    # cause repeat emails for the same match.
+    #
+    # Wrapped so a matching failure (e.g. a bad embedding, a transient DB
+    # hiccup) can't take down report creation itself -- the report is
+    # already safely saved at this point regardless.
+    try:
+        await run_matching_and_notify(report, db)
+    except Exception:
+        logger.exception("Matching pipeline failed for newly created report %s", report.id)
+
+    return _serialize_report(report, user, db)
 
 
 @router.post("/check-verification", response_model=VerificationCheckResponse)
