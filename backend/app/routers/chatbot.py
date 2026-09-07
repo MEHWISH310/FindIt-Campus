@@ -4,9 +4,9 @@ app/routers/chatbot.py
 Conversational assistant for FindIt Campus. Wraps the existing /reports,
 /matches, and /custody endpoints behind natural-language chat, using
 Gemini's tool-use to decide when to actually create a report, search for
-matches, check a verification answer, confirm a claim, or (for admins)
-check the admin dashboard / confirm a handover -- instead of duplicating
-that logic here.
+matches, check a verification answer, confirm a claim, delete a report, or
+(for admins) check the admin dashboard / confirm a handover -- instead of
+duplicating that logic here.
 
 WHY conversation memory is server-side (not client-sent history):
 Gemini's `contents` list -- which includes the real function_call and
@@ -108,9 +108,34 @@ lost-and-found platform. You can help with:
    scores trigger a disambiguation question. High-risk items (IDs, phones,
    documents, cards) are auto-flagged and their public photo is pixelated
    until the true owner verifies. Every physical handover is logged in a
-   custody ledger. Students can pre-register valuables with a QR tag.
-   Only @vitstudent.ac.in and @vit.ac.in emails can sign up. A confirmation
-   email is sent automatically when a report is created.
+   custody ledger. Only @vitstudent.ac.in and @vit.ac.in emails can sign up.
+   A confirmation email is sent automatically when a report is created.
+
+6. RESOLVING a disambiguation. Sometimes find_matches returns several
+   candidates whose scores are too close to auto-rank -- the person has to
+   pick which one is really theirs. If they tell you which match is
+   correct, call resolve_disambiguation with that match_id. This confirms
+   their pick and rejects the other competing candidates -- make sure the
+   person is confident before calling it.
+
+7. VIEWING the custody ledger. If the person asks about past handovers,
+   who returned an item, or wants a history of completed claims, call
+   list_custody_records.
+
+8. ESCALATING stale high-risk items. If explicitly asked to run the
+   staleness check (unclaimed high-risk items open 7+ days), call
+   escalate_stale_items. This affects other users' reports platform-wide,
+   so only call it on an explicit request to run it -- never on your own
+   initiative or as a side effect of something else.
+
+5. DELETING a report: if the person asks to delete/remove/cancel a report,
+   first make sure you know exactly which report (use list_my_reports if
+   you don't have the id already), then explicitly confirm with them
+   ("Just to confirm, delete your report 'Black wallet'? This can't be
+   undone.") before calling delete_report. Never delete without that
+   explicit confirmation step. Only the person who created a report can
+   delete it -- the backend enforces this, so if delete_report returns an
+   error, relay that plainly rather than pretending it worked.
 
 Ask clarifying questions one at a time. Keep responses short and
 conversational -- this is a chat widget, not an essay.
@@ -119,12 +144,12 @@ conversational -- this is a chat widget, not an essay.
 ADMIN_SYSTEM_PROMPT_ADDITION = """
 
 You are currently talking to an ADMIN. In addition to everything above, you can:
-5. Give a dashboard summary (get_dashboard_summary) -- open lost reports,
+9. Give a dashboard summary (get_dashboard_summary) -- open lost reports,
    open found reports, unresolved high-risk items, items awaiting pickup.
-6. List items awaiting pickup in detail (list_pending_pickups).
-7. Confirm a handover (confirm_handover) once the admin explicitly says
-   they've physically handed an item to its claimant. Never call this
-   just because it was asked about -- only on an explicit confirmation.
+10. List items awaiting pickup in detail (list_pending_pickups).
+11. Confirm a handover (confirm_handover) once the admin explicitly says
+    they've physically handed an item to its claimant. Never call this
+    just because it was asked about -- only on an explicit confirmation.
 
 Be concise -- a few short lines, not a long report. This is a chat widget.
 """
@@ -209,6 +234,53 @@ USER_TOOLS = [
                 "hidden_answer": types.Schema(type=types.Type.STRING),
             },
             required=["match_id", "hidden_answer"],
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="resolve_disambiguation",
+        description=(
+            "Confirm which match is the person's real item when find_matches "
+            "returned several close-scoring candidates needing disambiguation. "
+            "This promotes the chosen match and rejects the other competing "
+            "candidates -- only call it once the person has clearly told you "
+            "which specific match is correct."
+        ),
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={"match_id": types.Schema(type=types.Type.STRING)},
+            required=["match_id"],
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="list_custody_records",
+        description="List the full custody ledger -- every completed handover, who returned what to whom and when. Use this if the person asks about handover history or past claims.",
+        parameters=types.Schema(type=types.Type.OBJECT, properties={}),
+    ),
+    types.FunctionDeclaration(
+        name="escalate_stale_items",
+        description=(
+            "Run the staleness sweep: flags high-risk FOUND items that have "
+            "been open 7+ days as ESCALATED. Affects the whole platform, not "
+            "just this person's items -- only call this if explicitly asked "
+            "to run/trigger the escalation or staleness check."
+        ),
+        parameters=types.Schema(type=types.Type.OBJECT, properties={}),
+    ),
+    types.FunctionDeclaration(
+        name="delete_report",
+        description=(
+            "Permanently delete a lost/found report by its id. This is "
+            "IRREVERSIBLE. Only the person who created the report can delete "
+            "it -- the backend enforces this, so it will fail if the report "
+            "isn't theirs. NEVER call this without the person explicitly "
+            "confirming they want to delete THIS specific report -- if they "
+            "just say 'delete my report' without confirming which one or "
+            "confirming they're sure, ask first."
+        ),
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={"report_id": types.Schema(type=types.Type.STRING)},
+            required=["report_id"],
         ),
     ),
 ]
@@ -327,6 +399,14 @@ async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> 
                         "hidden_answer": tool_input["hidden_answer"],
                     },
                 )
+            elif name == "resolve_disambiguation":
+                resp = await h.post(f"/matches/{tool_input['match_id']}/disambiguate")
+            elif name == "list_custody_records":
+                resp = await h.get("/custody/")
+            elif name == "escalate_stale_items":
+                resp = await h.post("/reports/escalate-stale")
+            elif name == "delete_report":
+                resp = await h.delete(f"/reports/{tool_input['report_id']}")
             elif name == "get_dashboard_summary":
                 return await _get_dashboard_summary(h)
             elif name == "list_pending_pickups":

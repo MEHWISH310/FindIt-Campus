@@ -95,6 +95,19 @@ export function getReport(reportId) {
   return request(`/reports/${reportId}`);
 }
 
+/**
+ * POST /reports/check-verification : advisory check for a found report's
+ * verification Q&A -- does the answer leak from the public fields? Returns
+ * { leaked, reason }. Used by ReportForm to warn the finder while they
+ * type; the hard gate is server-side in createReport.
+ */
+export function checkVerificationQuestion(payload) {
+  return request('/reports/check-verification', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** POST /matches/find/{report_id} : run the AI matching pipeline for a report. */
 export function findMatches(reportId) {
   return request(`/matches/find/${reportId}`, { method: 'POST' });
@@ -249,6 +262,13 @@ export function changePassword(oldPassword, newPassword) {
   });
 }
 
+/**
+ * DELETE /reports/{report_id} : lets a reporter delete their own report.
+ * Fires the reports-changed event on success so the Header's Lost/Found
+ * counts drop immediately, the same way createReport/claimMatch/
+ * confirmHandover already do -- without this, the header only reflects
+ * the deletion after a full page reload re-runs its count fetch.
+ */
 export async function deleteReport(reportId, token) {
   const res = await fetch(`${API_BASE}/reports/${reportId}`, {
     method: 'DELETE',
@@ -258,7 +278,9 @@ export async function deleteReport(reportId, token) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(body.detail || 'Could not delete report.');
   }
-  return res.json();
+  const result = await res.json();
+  notifyReportsChanged();
+  return result;
 }
 
 /** GET /auth/me */
@@ -280,14 +302,13 @@ export function getMatch(matchId) {
   return request(`/matches/${matchId}`);
 }
 /** POST /chatbot/message — send a chat message, get the assistant's reply
- * plus updated conversation history to pass into the next call. */
+ * plus a conversation_id to pass into the next call (keeps server-side memory). */
 export function sendChatMessage(message, conversationId = null) {
   return request('/chatbot/message', {
     method: 'POST',
     body: JSON.stringify({ message, conversation_id: conversationId }),
   });
 }
-
 // --- Admin ---------------------------------------------------------------
 // All three require the logged-in user to have is_admin=true (see
 // backend's require_admin) -- a 403 comes back otherwise.
@@ -305,4 +326,17 @@ export async function confirmHandover(matchId) {
   const result = await request(`/custody/admin/${matchId}/handover`, { method: 'POST' });
   notifyReportsChanged();
   return result;
+}
+
+/** POST /custody/admin/{match_id}/verify — admin completes verification on a
+ * claimant's behalf (they failed online / got locked out but proved
+ * ownership in person). Moves the match to VERIFIED and into the pickup
+ * queue; the admin then hands it over with confirmHandover. Payload:
+ * { claimant_name, claimant_registration_number?, claimant_email?,
+ *   claimant_contact?, notes? }. Returns the new pending-pickup row. */
+export function adminVerifyClaim(matchId, payload) {
+  return request(`/custody/admin/${matchId}/verify`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
