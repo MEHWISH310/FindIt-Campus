@@ -198,7 +198,7 @@ def _compute_and_save_matches(report: Report, db: Session) -> dict:
 
     Deliberately has NO side effects beyond the DB (no email, no socket
     ping) -- see _notify_top_match for that, and see find_matches vs.
-    run_matching_and_notify below for who's allowed to call it.
+    run_matching_and_notify for who's allowed to call it.
     """
     opposite_type = ReportType.FOUND if report.report_type == ReportType.LOST else ReportType.LOST
     candidates = (
@@ -231,11 +231,29 @@ def _compute_and_save_matches(report: Report, db: Session) -> dict:
         if report.item_datetime and candidate.item_datetime:
             hours_apart = abs((report.item_datetime - candidate.item_datetime).total_seconds()) / 3600
 
+        # category_lost/category_found aur location_lost/location_found ko
+        # sahi lost/found side pe map karna zaroori hai -- `report` khud
+        # LOST ya FOUND koi bhi ho sakta hai (find_matches dono directions
+        # se call hota hai), `candidate` hamesha opposite type hota hai
+        # (upar wali query mein filter hai). Isse fusion.py ke
+        # category_match_score/location_match_score ko hamesha consistent
+        # order mein lost-side vs found-side value milti hai.
+        if report.report_type == ReportType.LOST:
+            category_lost, category_found = report.category, candidate.category
+            location_lost, location_found = report.location_name, candidate.location_name
+        else:
+            category_lost, category_found = candidate.category, report.category
+            location_lost, location_found = candidate.location_name, report.location_name
+
         signals = ReportSignals(
             text_sim=cosine_sim(report.text_embedding, candidate.text_embedding),
             image_sim=cosine_sim(report.image_embedding, candidate.image_embedding),
             distance_m=distance_m,
             hours_apart=hours_apart,
+            category_lost=category_lost,
+            category_found=category_found,
+            location_lost=location_lost,
+            location_found=location_found,
         )
         result = composite_score(signals)
         scored.append((candidate, result))
