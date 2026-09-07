@@ -52,15 +52,6 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
-
-    # Resend (https://resend.com) HTTP API key -- used instead of SMTP for
-    # sending email. Render's free tier blocks outbound SMTP ports (25, 465,
-    # 587) entirely, so smtplib never connects there; Resend sends over
-    # plain HTTPS (port 443) instead, which isn't blocked. If this is unset,
-    # email.py falls back to SMTP_* (for other hosts that do allow SMTP), and
-    # if neither is set, emails just print to the console.
-    resend_api_key: str = ""
-    resend_from: str = "onboarding@resend.dev"
     class Config:
         env_file = ".env"
 

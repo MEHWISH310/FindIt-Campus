@@ -1,67 +1,47 @@
 """
-Email sending -- used for:
+SMTP email sending -- used for:
   - first-time login: temp password (auth.py's request_access)
   - match found: notify the LOST reporter a candidate FOUND report exists
   - item claimed: notify the FOUND reporter someone claimed their item
 
-Tries, in order:
-  1. Resend HTTP API (RESEND_API_KEY set) -- sends over HTTPS (port 443),
-     which works even on hosts that block outbound SMTP ports (Render's
-     free tier blocks 25/465/587 entirely as of Sept 2025).
-  2. SMTP (SMTP_HOST/SMTP_USER/SMTP_PASSWORD set) -- for hosts that do
-     allow outbound SMTP.
-  3. Console print -- so local dev without either configured still works.
+Reads SMTP_* from settings (see core/config.py) -- set these in your real
+.env, never commit real credentials. Until they're set, this prints the
+email to the console instead of failing, so local dev without SMTP
+configured still works.
 
-Resend setup:
-  1. Sign up at resend.com, create an API key.
-  2. In backend/.env (or your host's env vars):
-       RESEND_API_KEY=re_xxxxxxxxxxxx
-     RESEND_FROM defaults to onboarding@resend.dev (Resend's shared test
-     sender, works with zero setup). To send from your own address, verify
-     a domain in the Resend dashboard and set RESEND_FROM to an address on
-     it, e.g. noreply@yourdomain.com.
-
+Setup notes (Gmail, simplest path for a college project):
+  1. On the Google account that will send mail: turn on 2-Step
+     Verification, then create an "App Password" (Google Account ->
+     Security -> 2-Step Verification -> App passwords). Regular account
+     passwords don't work here -- Gmail requires an app password for
+     SMTP.
+  2. In backend/.env:
+       SMTP_HOST=smtp.gmail.com
+       SMTP_PORT=587
+       SMTP_USER=your.address@gmail.com
+       SMTP_PASSWORD=<the 16-character app password, no spaces>
+       SMTP_FROM=your.address@gmail.com
+  3. Restart uvicorn -- send_email() picks up settings on import via
+     app.core.config, so a plain reload is enough.
 Never put real credentials in code or commit .env -- it should already be
 gitignored.
 """
 
-import json
-import urllib.request
-import urllib.error
 import smtplib
 from email.mime.text import MIMEText
 
 from app.core.config import settings
 
 
-def _send_via_resend(to_email: str, subject: str, body: str) -> None:
-    payload = json.dumps({
-        "from": settings.resend_from,
-        "to": [to_email],
-        "subject": subject,
-        "text": body,
-    }).encode("utf-8")
+def send_email(to_email: str, subject: str, body: str) -> None:
+    if not (settings.smtp_host and settings.smtp_user and settings.smtp_password):
+        print(
+            f"\n----- [EMAIL STUB -- SMTP not configured, see core/email.py docstring] -----\n"
+            f"To: {to_email}\nSubject: {subject}\n\n{body}\n"
+            f"-------------------------------------------------------------------------\n"
+        )
+        return
 
-    req = urllib.request.Request(
-        "https://api.resend.com/emails",
-        data=payload,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {settings.resend_api_key}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            resp.read()
-    except urllib.error.HTTPError as e:
-        # Surface Resend's error body (e.g. unverified domain, bad from
-        # address) instead of a bare HTTP status code.
-        detail = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Resend API error {e.code}: {detail}") from e
-
-
-def _send_via_smtp(to_email: str, subject: str, body: str) -> None:
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = settings.smtp_from or settings.smtp_user
@@ -71,19 +51,3 @@ def _send_via_smtp(to_email: str, subject: str, body: str) -> None:
         server.starttls()
         server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(msg["From"], [to_email], msg.as_string())
-
-
-def send_email(to_email: str, subject: str, body: str) -> None:
-    if settings.resend_api_key:
-        _send_via_resend(to_email, subject, body)
-        return
-
-    if settings.smtp_host and settings.smtp_user and settings.smtp_password:
-        _send_via_smtp(to_email, subject, body)
-        return
-
-    print(
-        f"\n----- [EMAIL STUB -- no RESEND_API_KEY or SMTP_* configured, see core/email.py docstring] -----\n"
-        f"To: {to_email}\nSubject: {subject}\n\n{body}\n"
-        f"-------------------------------------------------------------------------\n"
-    )
