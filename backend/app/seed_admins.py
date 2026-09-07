@@ -29,6 +29,7 @@ from app.models.building import Building
 ADMINS = [
     {"email": "mehwish310@gmail.com", "name": "PRP Admin", "assigned_building": Building.PRP},
     {"email": "mansisharma9218@gmail.com", "name": "SJT Admin", "assigned_building": Building.SJT},
+    {"email": "chaudharyaarushi97@gmail.com", "name": "TT Admin", "assigned_building": Building.TT},
 ]
 
 db = SessionLocal()
