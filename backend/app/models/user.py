@@ -2,8 +2,8 @@
 User = a college member's account.
 
 Two ways an account row gets created:
-  1. Admin pre-seeds it (see seed_users.py / a future admin-add-user
-     tool) with just an email -- registration_number left blank.
+  1. Admin pre-seeds it (see seed_admins.py / seed_users.py) with just an
+     email -- registration_number left blank.
   2. A student self-signs-up via POST /auth/request-access with an email
      that has no existing row -- a fresh row is created right there.
 
@@ -21,10 +21,11 @@ set immediately at creation time.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Enum
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.session import Base
+from app.models.building import Building
 
 # Only these college email domains are accepted, everywhere a User is
 # created -- seed_users.py, /auth/request-access, and any future admin
@@ -63,5 +64,15 @@ class User(Base):
     # filed a report (reporter identity) and confirm physical handovers --
     # regular users never see who filed a report they're not party to.
     is_admin = Column(String(5), default="false")
+
+    # Which physical collection point this admin works out of -- only ever
+    # meaningful when is_admin == "true" (seed_admins.py is the only place
+    # admin rows get created, and it always sets this). Drives the
+    # pickup-queue filter in custody.py's list_pending_pickups, so an
+    # admin only sees handovers for items actually being held at their own
+    # desk -- they physically can't hand over something sitting at the
+    # other building. Nullable rather than required, so a plain student
+    # row is never forced to have an opinion about a building.
+    assigned_building = Column(Enum(Building), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)

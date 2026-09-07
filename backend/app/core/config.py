@@ -24,10 +24,22 @@ class Settings(BaseSettings):
     # Where uploaded report photos get saved on disk (swap for S3/Cloudinary later)
     upload_dir: str = "uploads"
 
-    # Base URL of the deployed frontend -- used to build the link a QR tag
-    # encodes (GET /reports/{id}/qr-code). Must be set to the real deployed
-    # URL in production; localhost is fine for dev.
+    # Base URL of the deployed frontend -- used to build the link in the
+    # "possible match found" email (see matches.py). Must be set to the
+    # real deployed URL in production; localhost is fine for dev.
     frontend_base_url: str = "http://localhost:5173"
+
+    # Comma-separated list of origins allowed to call this API (CORS) and to
+    # open a Socket.IO connection. Defaults to the local Vite/CRA dev ports;
+    # in a deployed environment set CORS_ORIGINS to the real frontend
+    # origin(s), e.g. "https://findit.example.com,https://www.findit.example.com".
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """cors_origins split into a clean list -- consumed by the CORS
+        middleware (main.py) and the Socket.IO server (realtime.py)."""
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     # SMTP -- blank by default so local dev without real credentials still
     # works (core/email.py falls back to printing the email to the
@@ -40,6 +52,20 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
+
+    # Brevo (https://brevo.com) HTTP API key -- used instead of SMTP for
+    # sending email. Render's free tier blocks outbound SMTP ports (25, 465,
+    # 587) entirely, so smtplib never connects; Brevo sends over plain
+    # HTTPS (port 443) instead, which isn't blocked. brevo_sender must be
+    # an email you've verified as a sender in Brevo (Senders & IP ->
+    # Senders) -- a single verified sender address works, no domain
+    # purchase/authentication needed for this. If RESEND/BREVO/SMTP are all
+    # unset, email.py falls back to printing to the console.
+    brevo_api_key: str = ""
+    brevo_sender: str = ""
+    brevo_sender_name: str = "FindIt Campus"
+    resend_api_key: str = ""
+    resend_from: str = "onboarding@resend.dev"
     class Config:
         env_file = ".env"
 

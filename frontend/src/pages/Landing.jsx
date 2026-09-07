@@ -62,44 +62,44 @@ function Deco({ kind, className }) {
 const STEPS = [
   {
     n: '01',
-    title: 'Pin a notice',
-    body: 'Describe what you lost or found in a sentence, add a photo if you have one, and drop the spot on campus where it happened.',
+    title: 'File a notice',
+    body: 'Describe what you lost or found, add a photo, and mark the spot and time. If you found it, you also set a secret question only the true owner could answer.',
   },
   {
     n: '02',
-    title: 'The engine matches',
-    body: 'Every new notice is compared against all open notices of the opposite kind, with meaning, image, distance, and time gap fused into one calibrated score.',
+    title: 'See your matches',
+    body: 'You’re notified when a likely match shows up. Open your notice to see the ranked candidates, and claim the right one by answering the secret question the finder set.',
   },
   {
     n: '03',
-    title: 'Verify and reunite',
-    body: 'The owner answers a hidden verification question. Only on a correct answer are contact details released and the handover written to the ledger.',
+    title: 'Collect it',
+    body: 'On a correct answer you’re told which campus desk to collect from. Staff there confirm your claim, hand the item over, and record the handover.',
   },
 ];
 
 const SIGNALS = [
   {
     tag: 'S1',
-    title: 'Text understanding',
-    body: '“Black wallet” and “dark brown leather purse” land close together, because descriptions are embedded with a sentence transformer, not string-matched.',
-    weight: 0.82,
+    title: 'Description',
+    body: 'Reports are compared by meaning, so “black wallet” and “dark brown leather purse” are recognised as the same kind of thing.',
+    weight: 1,
   },
   {
     tag: 'S2',
-    title: 'Image similarity',
-    body: 'Uploaded photos are compared with CLIP, so a picture of the item counts even when the words don’t line up.',
-    weight: 0.7,
+    title: 'Photo',
+    body: 'When an image is attached, the match is checked against it too, catching items that were worded quite differently.',
+    weight: 1,
   },
   {
     tag: 'S3',
-    title: 'Geo-temporal fusion',
-    body: 'A find 40 m and 20 minutes away outranks one across campus a week later. Location proximity and time decay weight every candidate.',
-    weight: 0.9,
+    title: 'Place & time',
+    body: 'A find close to where and when something was lost counts for more than one far away or much later.',
+    weight: 0.45,
   },
   {
     tag: 'S4',
-    title: 'Calibrated confidence',
-    body: 'Scores pass through a calibration layer, so an 80% match really is right about 80% of the time, measured with Expected Calibration Error.',
+    title: 'Calibrated score',
+    body: 'The four signals combine into a single percentage that is tuned to reflect how often a match at that level is correct.',
     weight: 1,
   },
 ];
@@ -191,23 +191,46 @@ function SignalExplorer() {
 const SAFEGUARDS = [
   {
     k: '01',
-    title: 'Asymmetric verification',
-    body: 'Finders set a hidden question; claimants must answer it before any contact detail is shown. Three misses locks the claim for a day.',
+    title: 'Secret question',
+    body: 'The finder sets a question only the real owner could answer. Get it wrong and the claim doesn’t go through, so nobody talks their way into someone else’s belongings.',
   },
   {
     k: '02',
-    title: 'Custody ledger',
-    body: 'Every handover is written once and never edited. Item, claimant, verifier, and timestamp form an auditable chain.',
+    title: 'Handover on record',
+    body: 'Every pickup is logged once and never rewritten: what, who, and when. A clean paper trail for anything that changes hands.',
   },
   {
     k: '03',
-    title: 'High-risk handling',
-    body: 'IDs, phones, keys, and documents get priority matching, redacted numbers in public views, and escalation if unclaimed after 7 days.',
+    title: 'Careful with the risky stuff',
+    body: 'IDs, phones, and laptops get their photos blurred in public and a nudge to staff if nobody claims them.',
   },
   {
     k: '04',
-    title: 'Smart disambiguation',
-    body: 'When two matches score too close to call, you get one targeted attribute question instead of a wrong guess.',
+    title: 'One good question',
+    body: 'Two matches too close to call? You get a single “is this the one?” instead of a coin flip.',
+  },
+];
+
+const EXTRAS = [
+  {
+    k: '01',
+    title: 'Just ask',
+    body: 'A chat assistant files your report, checks for matches, and answers “how does this work?” without you touching a form.',
+  },
+  {
+    k: '02',
+    title: 'Live nudges',
+    body: 'A match, a claim, a heads-up, they pop up the moment they happen, and hit your inbox too.',
+  },
+  {
+    k: '03',
+    title: 'Campus only',
+    body: 'VIT email to get in, and your name stays hidden from everyone but staff.',
+  },
+  {
+    k: '04',
+    title: 'Works like an app',
+    body: 'Add it to your home screen and it opens full-screen, with a stable connection on patchy campus networks.',
   },
 ];
 
@@ -220,9 +243,9 @@ export default function Landing() {
           <p className="landing-eyebrow mono">Campus lost &amp; found, AI matched</p>
           <h1 className="landing-title">Somebody found what you lost.</h1>
           <p className="landing-sub">
-            Pin a notice for what you lost or found. The matching engine compares
-            descriptions, photos, location, and time to find the other half of
-            the story, with no scrolling through a noticeboard required.
+            Drop a quick notice for whatever you lost or found. The engine reads
+            the words, the photo, the place and the time, and finds the other
+            half of the story. No noticeboard, no group-chat begging.
           </p>
           <div className="landing-ctas">
             <Link to="/report/lost" className="cta cta--lost">
@@ -286,7 +309,10 @@ export default function Landing() {
         <Deco kind="ring" className="lp-deco--l" />
         <p className="lp-eyebrow mono">What powers the match</p>
         <h2 id="what-powers" className="lp-h2">Four signals, one calibrated score.</h2>
-        <p className="lp-signal-hint">Slide across the bars to see what each one contributes.</p>
+        <p className="lp-signal-hint">
+          Leave one out and the others carry the match. Slide across the bars to
+          see what each one adds.
+        </p>
         <SignalExplorer />
       </section>
 
@@ -308,14 +334,33 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 4. Closing band */}
+      {/* 4. Beyond the match: second bento of everyday features */}
+      <section className="lp-sec lp-safe" aria-labelledby="beyond-match">
+        <Deco kind="squiggle" className="lp-deco--c" />
+        <Deco kind="octagon" className="lp-deco--d" />
+        <Deco kind="ring" className="lp-deco--g" />
+        <p className="lp-eyebrow mono">Beyond the match</p>
+        <h2 id="beyond-match" className="lp-h2">Built to be lived in.</h2>
+        <div className="lp-bento">
+          {EXTRAS.map((f) => (
+            <article key={f.k} className="lp-bento-tile">
+              <span className="lp-bento-k mono">{f.k}</span>
+              <h3 className="lp-bento-title">{f.title}</h3>
+              <p className="lp-bento-body">{f.body}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* 5. Closing band */}
       <section className="lp-closing" aria-labelledby="closing-cta">
         <Deco kind="star" className="lp-deco--h" />
         <Deco kind="plus" className="lp-deco--i" />
         <Deco kind="octagon" className="lp-deco--j" />
         <h2 id="closing-cta" className="lp-closing-title">Lost something today?</h2>
         <p className="lp-closing-sub">
-          It takes under a minute to file a notice. The engine does the searching.
+          A minute to file a notice, or just tell the assistant. The engine does
+          the digging.
         </p>
         <div className="landing-ctas">
           <Link to="/report/lost" className="cta cta--lost">

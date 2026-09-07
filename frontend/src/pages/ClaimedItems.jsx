@@ -36,11 +36,6 @@ export default function ClaimedItems() {
         </h1>
       </div>
 
-      <p className="dashboard-status" style={{ marginTop: 0 }}>
-        Every confirmed handover, most recent first. This is the audit trail written
-        when a claimant answers a found report's verification question correctly.
-      </p>
-
       {error && <p className="dashboard-status dashboard-status--error">Couldn't reach the backend: {error}</p>}
       {!records && !error && <p className="dashboard-status status-pulse">Loading claimed items…</p>}
       {records && records.length === 0 && (
@@ -52,6 +47,7 @@ export default function ClaimedItems() {
           <table className="custody-table">
             <thead>
               <tr>
+                <th>Match ID</th>
                 <th>Item</th>
                 <th>Claimant</th>
                 <th>Contact</th>
@@ -63,6 +59,7 @@ export default function ClaimedItems() {
             <tbody>
               {records.map((r) => (
                 <tr key={r.id}>
+                  <td className="mono" title={r.match_id}>{r.match_id.slice(0, 8)}</td>
                   <td>{r.item_name}</td>
                   <td>{r.claimant_name}</td>
                   <td>{r.claimant_contact || '-'}</td>

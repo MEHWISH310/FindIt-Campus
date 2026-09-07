@@ -10,6 +10,7 @@ import os
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import false
 from sqlalchemy.orm import Session, aliased
 
 from app.core.config import settings
@@ -20,20 +21,64 @@ from app.models.match import Match, MatchStatus
 from app.models.report import Report, ReportStatus
 from app.models.user import User
 from app.routers.auth import get_current_user, require_admin
-from app.routers.schemas import CustodyRecordOut, PendingPickupOut, ReporterInfoOut, MyClaimOut
+from app.routers.schemas import (
+    AdminVerifyRequest,
+    CustodyRecordOut,
+    PendingPickupOut,
+    ReporterInfoOut,
+    MyClaimOut,
+)
 from app.matching.redaction import reveal_photos
 from app.realtime import sio
 
 router = APIRouter(prefix="/custody", tags=["custody"])
 
 
+def _custody_out_with_collection_point(record: CustodyRecord, collection_point) -> CustodyRecordOut:
+    """Shared builder: shapes one CustodyRecord row plus the found report's
+    collection_point (not a CustodyRecord column, so it never comes along
+    for free) into the response schema. Used by both list_custody_records
+    (everyone, all records) and list_my_custody_records (mine only).
+
+    collection_point comes back from the DB as a Building enum member (or
+    None) since Report.collection_point is now Column(Enum(Building)) --
+    .value turns it into the plain "PRP"/"SJT" string the schema expects.
+    """
+    return CustodyRecordOut(
+        id=record.id,
+        match_id=record.match_id,
+        item_name=record.item_name,
+        claimant_name=record.claimant_name,
+        claimant_contact=record.claimant_contact,
+        verifier_name=record.verifier_name,
+        handover_datetime=record.handover_datetime,
+        notes=record.notes,
+        identity_verified=record.identity_verified,
+        collection_point=collection_point.value if collection_point else None,
+    )
+
+
 @router.get("/", response_model=List[CustodyRecordOut])
 def list_custody_records(db: Session = Depends(get_db)):
-    return (
-        db.query(CustodyRecord)
+    """
+    Every confirmed handover, most recent first. No auth restriction here
+    (never had one) -- both the admin "Claimed items" page and the
+    non-admin "Claimed items" page hit this same endpoint; the frontend
+    just chooses which columns to render.
+
+    collection_point is joined in from the found report via Match, same
+    as list_my_custody_records below, so both admin and non-admin views
+    can show "where do I collect it" without a second request.
+    """
+    FoundReport = aliased(Report)
+    rows = (
+        db.query(CustodyRecord, FoundReport.collection_point)
+        .join(Match, Match.id == CustodyRecord.match_id)
+        .join(FoundReport, FoundReport.id == Match.found_report_id)
         .order_by(CustodyRecord.handover_datetime.desc())
         .all()
     )
+    return [_custody_out_with_collection_point(record, cp) for record, cp in rows]
 
 
 @router.get("/mine", response_model=List[CustodyRecordOut])
@@ -46,15 +91,22 @@ def list_my_custody_records(
     who filed the LOST report behind the match. CustodyRecord itself only
     stores the free-text claimant_name typed into the claim form, so
     ownership is derived by walking match -> lost report -> reporter_id.
+
+    Kept around even though the non-admin "Claimed items" page no longer
+    uses it (that now shows every record, via list_custody_records above)
+    -- left here in case a future "just my own claims" view needs it.
     """
-    return (
-        db.query(CustodyRecord)
+    FoundReport = aliased(Report)
+    rows = (
+        db.query(CustodyRecord, FoundReport.collection_point)
         .join(Match, Match.id == CustodyRecord.match_id)
         .join(Report, Report.id == Match.lost_report_id)
+        .join(FoundReport, FoundReport.id == Match.found_report_id)
         .filter(Report.reporter_id == user.id)
         .order_by(CustodyRecord.handover_datetime.desc())
         .all()
     )
+    return [_custody_out_with_collection_point(record, cp) for record, cp in rows]
 
 
 @router.get("/mine/claims", response_model=List[MyClaimOut])
@@ -78,6 +130,12 @@ def list_my_claims(
 
     Pending items are listed first (they're the ones needing action),
     then completed ones most-recent-first.
+
+    Each row also carries match_id -- distinct from `id`, which stays
+    match id for pending rows but custody-record id for completed rows
+    (kept as-is for backward compatibility) -- so the frontend has one
+    reliable field to show/reference regardless of which stage the
+    claim is in.
     """
     out = []
 
@@ -95,10 +153,11 @@ def list_my_claims(
         out.append(
             MyClaimOut(
                 id=str(match.id),
+                match_id=str(match.id),
                 item_name=found_report.title,
                 status="pending",
                 handover_datetime=None,
-                collection_point=found_report.collection_point,
+                collection_point=found_report.collection_point.value if found_report.collection_point else None,
             )
         )
 
@@ -121,10 +180,11 @@ def list_my_claims(
         out.append(
             MyClaimOut(
                 id=str(record.id),
+                match_id=str(record.match_id),
                 item_name=record.item_name,
                 status="completed",
                 handover_datetime=record.handover_datetime,
-                collection_point=collection_point,
+                collection_point=collection_point.value if collection_point else None,
             )
         )
 
@@ -139,6 +199,30 @@ def get_custody_record(record_id: str, db: Session = Depends(get_db)):
     return record
 
 
+def _pending_pickup_out(match: Match, db: Session) -> PendingPickupOut | None:
+    """Shape one VERIFIED match into the admin pickup-queue row. Returns
+    None if either underlying report has since been deleted."""
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    if not found_report or not lost_report:
+        return None
+
+    finder = db.query(User).filter(User.id == found_report.reporter_id).first() if found_report.reporter_id else None
+    owner = db.query(User).filter(User.id == lost_report.reporter_id).first() if lost_report.reporter_id else None
+
+    return PendingPickupOut(
+        match_id=match.id,
+        item_title=found_report.title,
+        category=found_report.category,
+        collection_point=found_report.collection_point.value if found_report.collection_point else None,
+        found_report_id=found_report.id,
+        lost_report_id=lost_report.id,
+        finder=ReporterInfoOut(id=finder.id, name=finder.name, email=finder.email, phone=finder.phone) if finder else None,
+        owner=ReporterInfoOut(id=owner.id, name=owner.name, email=owner.email, phone=owner.phone) if owner else None,
+        verified_at=match.updated_at,
+    )
+
+
 @router.get("/admin/pending-pickups", response_model=List[PendingPickupOut])
 def list_pending_pickups(
     db: Session = Depends(get_db),
@@ -150,33 +234,83 @@ def list_pending_pickups(
     is the queue admin works off of at the collection point: look up the
     report's unique id, confirm the person in front of them, hand over,
     click confirm.
+
+    Scoped to the admin's own building (User.assigned_building), joined
+    against the found report's collection_point -- an admin only ever
+    sees handovers for items actually sitting at their own desk, since
+    that's the only place they can physically confirm one. An admin with
+    no assigned_building (shouldn't happen post-seed_admins.py, but not
+    impossible) sees an empty queue rather than everyone else's pickups --
+    fail closed, not open.
     """
-    matches = db.query(Match).filter(Match.status == MatchStatus.VERIFIED).order_by(Match.updated_at.asc()).all()
+    query = (
+        db.query(Match)
+        .join(Report, Report.id == Match.found_report_id)
+        .filter(Match.status == MatchStatus.VERIFIED)
+    )
+    if admin.assigned_building is not None:
+        query = query.filter(Report.collection_point == admin.assigned_building)
+    else:
+        query = query.filter(false())
 
-    out = []
-    for match in matches:
-        found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
-        lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
-        if not found_report or not lost_report:
-            continue
+    matches = query.order_by(Match.updated_at.asc()).all()
+    return [row for row in (_pending_pickup_out(m, db) for m in matches) if row]
 
-        finder = db.query(User).filter(User.id == found_report.reporter_id).first() if found_report.reporter_id else None
-        owner = db.query(User).filter(User.id == lost_report.reporter_id).first() if lost_report.reporter_id else None
 
-        out.append(
-            PendingPickupOut(
-                match_id=match.id,
-                item_title=found_report.title,
-                category=found_report.category,
-                collection_point=found_report.collection_point,
-                found_report_id=found_report.id,
-                lost_report_id=lost_report.id,
-                finder=ReporterInfoOut(id=finder.id, name=finder.name, email=finder.email, phone=finder.phone) if finder else None,
-                owner=ReporterInfoOut(id=owner.id, name=owner.name, email=owner.email, phone=owner.phone) if owner else None,
-                verified_at=match.updated_at,
-            )
-        )
-    return out
+@router.post("/admin/{match_id}/verify", response_model=PendingPickupOut)
+async def admin_verify_claim(
+    match_id: str,
+    payload: AdminVerifyRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """
+    Admin-only. Verification done in person: a student failed the online
+    check (or ran out of attempts and got locked), came to the desk, and
+    proved the item is theirs some other way. The admin fills in the
+    claimant's identity details here and this stands in for the answered
+    verification question -- the match jumps to VERIFIED and lands in the
+    pickup queue, exactly as a successful online claim would, so the admin
+    can then hand it over via the usual "Mark handed over".
+
+    Resets the failed-attempt counter (so nothing stays stuck "locked")
+    and records that this was an admin-assisted verification.
+    """
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+    if match.status == MatchStatus.CONFIRMED:
+        raise HTTPException(400, "This item has already been handed over.")
+    if match.status == MatchStatus.REJECTED:
+        raise HTTPException(400, "This match was rejected and can no longer be claimed.")
+
+    found_report = db.query(Report).filter(Report.id == match.found_report_id).first()
+    lost_report = db.query(Report).filter(Report.id == match.lost_report_id).first()
+    if not found_report or not lost_report:
+        raise HTTPException(404, "One of the reports behind this match no longer exists")
+
+    match.pending_claimant_name = payload.claimant_name.strip()
+    match.pending_claimant_contact = (payload.claimant_contact or "").strip() or None
+    match.pending_claimant_notes = (payload.notes or "").strip() or None
+    match.pending_claimant_registration_number = (
+        (payload.claimant_registration_number or "").strip().upper() or None
+    )
+    match.status = MatchStatus.VERIFIED
+    match.verified_by_admin = "true"
+    match.failed_claim_attempts = 0
+    db.commit()
+    db.refresh(match)
+
+    await sio.emit(
+        "match:verified",
+        {
+            "match_id": str(match.id),
+            "item_name": found_report.title,
+            "claimant_name": match.pending_claimant_name,
+        },
+    )
+
+    return _pending_pickup_out(match, db)
 
 
 @router.post("/admin/{match_id}/handover", response_model=CustodyRecordOut)

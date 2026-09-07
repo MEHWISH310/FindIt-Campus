@@ -1,5 +1,126 @@
 import { useCallback, useEffect, useState } from 'react';
-import { listPendingPickups, confirmHandover, showToast, ApiError } from '../api/client';
+import {
+  listPendingPickups,
+  confirmHandover,
+  adminVerifyClaim,
+  showToast,
+  ApiError,
+} from '../api/client';
+import { collectionPointLabel } from '../utils/buildings';
+
+const EMPTY_VERIFY = {
+  match_id: '',
+  claimant_name: '',
+  claimant_registration_number: '',
+  claimant_email: '',
+  claimant_contact: '',
+  notes: '',
+};
+
+/**
+ * In-person verification: a student failed the online check (or used up
+ * their 3 attempts and got locked out) but proved the item is theirs at
+ * the desk. The admin fills the claimant's details in here; this stands in
+ * for the answered verification question, so the match moves to VERIFIED
+ * and shows up in the pickup queue below for the usual hand-over.
+ */
+function AdminVerifyForm({ onVerified }) {
+  const [form, setForm] = useState(EMPTY_VERIFY);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    const matchId = form.match_id.trim();
+    const registrationNumber = form.claimant_registration_number.trim();
+    const email = form.claimant_email.trim();
+    if (!matchId || !form.claimant_name.trim() || !registrationNumber || !email) {
+      setError('Match ref, claimant name, registration number, and email are required.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await adminVerifyClaim(matchId, {
+        claimant_name: form.claimant_name.trim(),
+        claimant_registration_number: registrationNumber.toUpperCase(),
+        claimant_email: email,
+        claimant_contact: form.claimant_contact.trim() || null,
+        notes: form.notes.trim() || null,
+      });
+      setForm(EMPTY_VERIFY);
+      showToast('Verified in person — the item is now ready for hand-over below.');
+      onVerified();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not verify this claim.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <details className="admin-verify">
+      <summary>Verify a claim in person</summary>
+      <form className="stacked-form admin-verify-form" onSubmit={handleSubmit}>
+        <p className="photo-hint">
+          For a student who couldn't verify online. The match ref is shown on
+          their matches page (labelled "ref"). This skips the hidden question —
+          only do it once you've checked their ID against the item.
+        </p>
+        <label className="field">
+          <span>Match ref*</span>
+          <input
+            value={form.match_id}
+            onChange={(e) => set('match_id', e.target.value)}
+            placeholder="e.g. 3f9c1a2b-…"
+          />
+        </label>
+        <label className="field">
+          <span>Claimant name*</span>
+          <input value={form.claimant_name} onChange={(e) => set('claimant_name', e.target.value)} />
+        </label>
+        <div className="field-row">
+          <label className="field">
+            <span>Registration number*</span>
+            <input
+              value={form.claimant_registration_number}
+              onChange={(e) => set('claimant_registration_number', e.target.value)}
+              placeholder="23BCE0000"
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Email*</span>
+            <input
+              type="email"
+              value={form.claimant_email}
+              onChange={(e) => set('claimant_email', e.target.value)}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Phone</span>
+            <input value={form.claimant_contact} onChange={(e) => set('claimant_contact', e.target.value)} />
+          </label>
+        </div>
+        <label className="field">
+          <span>Notes</span>
+          <input
+            value={form.notes}
+            onChange={(e) => set('notes', e.target.value)}
+            placeholder="e.g. verified against student ID card"
+          />
+        </label>
+        {error && <p className="form-error">{error}</p>}
+        <button type="submit" className="submit-btn" disabled={submitting}>
+          {submitting ? 'Verifying…' : 'Verify & queue for hand-over'}
+        </button>
+      </form>
+    </details>
+  );
+}
 
 function formatDate(dateString) {
   if (!dateString) return '—';
@@ -40,6 +161,11 @@ function renderPerson(person) {
  * Admin-only dashboard: the queue of matches where the claimant already
  * answered the verification question correctly (status VERIFIED), but the
  * item is still sitting with admin -- nobody's clicked "handed over" yet.
+ *
+ * Scoped server-side to the logged-in admin's own assigned_building (see
+ * custody.py's list_pending_pickups) -- this page only ever shows pickups
+ * for whichever desk this admin actually works at, so no client-side
+ * filtering is needed here.
  *
  * Each row shows the report's unique id (match_id) plus who found it and
  * who's coming to collect it, so admin can look the person up by id when
@@ -85,12 +211,7 @@ export default function Admin() {
         </h1>
       </div>
 
-      <p className="dashboard-status" style={{ marginTop: 0 }}>
-        Everyone here has already passed their verification question online. When they
-        come to collect, match their name to the Report ID, hand the item over, then
-        click "Mark handed over", that closes both reports and emails the finder to
-        confirm the item's been returned.
-      </p>
+      <AdminVerifyForm onVerified={reload} />
 
       {error && <p className="dashboard-status dashboard-status--error">{error}</p>}
       {!pickups && !error && <p className="dashboard-status status-pulse">Loading…</p>}
@@ -115,12 +236,12 @@ export default function Admin() {
             <tbody>
               {pickups.map((p) => (
                 <tr key={p.match_id}>
-                  <td className="mono" title={p.match_id}>{p.match_id.slice(0, 8)}</td>
+                  <td className="mono">{p.match_id}</td>
                   <td>
                     {p.item_title}
                     {p.category ? ` (${p.category})` : ''}
                   </td>
-                  <td>{p.collection_point || '—'}</td>
+                  <td>{collectionPointLabel(p.collection_point) || '—'}</td>
                   <td className="pickup-person">{renderPerson(p.finder)}</td>
                   <td className="pickup-person">{renderPerson(p.owner)}</td>
                   <td className="mono">{formatDate(p.verified_at)}</td>

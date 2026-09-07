@@ -4,10 +4,12 @@ import { REPORTS_CHANGED_EVENT, TOAST_EVENT } from '../api/client';
 
 // One entry per backend event (see backend/app/realtime.py's docstring for
 // the full list) -- `render` turns the event payload into a human message.
+// `silent: true` means we still listen (to keep Header's counts live) but
+// don't surface a toast for it.
 const EVENT_RENDERERS = [
   {
     name: 'report:created',
-    render: (d) => `New ${d.report_type} report: "${d.title}"${d.is_high_risk ? ' (high-risk)' : ''}`,
+    silent: true,
   },
   {
     name: 'match:found',
@@ -46,15 +48,17 @@ export default function NotificationToast() {
       }, TOAST_LIFETIME_MS);
     }
 
-    const bound = EVENT_RENDERERS.map(({ name, render }) => {
+    const bound = EVENT_RENDERERS.map(({ name, render, silent }) => {
       const handler = (data) => {
-        let message;
-        try {
-          message = render(data);
-        } catch {
-          message = 'Update received';
+        if (!silent) {
+          let message;
+          try {
+            message = render(data);
+          } catch {
+            message = 'Update received';
+          }
+          pushToast(message);
         }
-        pushToast(message);
         window.dispatchEvent(new Event(REPORTS_CHANGED_EVENT));
       };
       socket.on(name, handler);

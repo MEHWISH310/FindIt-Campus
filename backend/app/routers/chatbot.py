@@ -22,6 +22,7 @@ college project; a real deployment would move this to Redis or a DB table.
 
 Requires GEMINI_API_KEY in your .env (see core/config.py).
 """
+import asyncio
 import json
 import uuid
 import httpx
@@ -47,8 +48,27 @@ INTERNAL_BASE_URL = "http://localhost:8000"
 # function_call/function_response parts. See module docstring.
 _CONVERSATIONS: dict[str, List[types.Content]] = {}
 
+<<<<<<< HEAD
 BASE_SYSTEM_PROMPT = """You are the FindIt Campus assistant -- a chatbot for VIT's
 lost-and-found platform. You can help with:
+=======
+1. Reporting a lost or found item -- ask for: title, description, category,
+   color, brand, and where it was lost/found. For FOUND items do NOT ask when
+   it was found (the report is timestamped automatically); FOUND items also
+   need a hidden verification question + answer that a claimant must answer
+   correctly. For LOST items, ask when it was lost -- this must be within the
+   last 14 days; if they say it was longer ago, tell them to contact the lost
+   & found desk instead.
+   The verification answer must NOT be something already stated in the public
+   description (e.g. don't put the colour in the description and then ask the
+   colour). If the user's question/answer leaks like that, point it out and
+   ask them for a better one before calling create_report.
+2. Searching for potential matches to an item they've lost.
+3. Explaining how the platform works: asymmetric verification (claimant must
+   answer a hidden question before contact info is revealed), the custody
+   ledger (records every handover), and high-risk item handling (IDs, phones,
+   documents get priority + redaction).
+>>>>>>> origin/main
 
 1. REPORTING a lost or found item.
    Required fields for EVERY report: title, description, category, color,
@@ -174,12 +194,21 @@ USER_TOOLS = [
                 "color": types.Schema(type=types.Type.STRING),
                 "brand": types.Schema(type=types.Type.STRING),
                 "location_name": types.Schema(type=types.Type.STRING),
+<<<<<<< HEAD
                 "item_datetime": types.Schema(type=types.Type.STRING, description="ISO 8601 datetime"),
                 "hidden_question": types.Schema(type=types.Type.STRING, description="FOUND reports only -- required"),
                 "hidden_answer": types.Schema(type=types.Type.STRING, description="FOUND reports only -- required"),
                 "collection_point": types.Schema(type=types.Type.STRING, description="FOUND reports only -- required"),
+=======
+                "item_datetime": types.Schema(
+                    type=types.Type.STRING,
+                    description="ISO 8601 datetime. LOST reports only, and must be within the last 14 days. Omit for FOUND reports.",
+                ),
+                "hidden_question": types.Schema(type=types.Type.STRING, description="FOUND reports only"),
+                "hidden_answer": types.Schema(type=types.Type.STRING, description="FOUND reports only"),
+>>>>>>> origin/main
             },
-            required=["report_type", "title", "description", "item_datetime"],
+            required=["report_type", "title", "description"],
         ),
     ),
     types.FunctionDeclaration(
@@ -352,10 +381,24 @@ async def _get_dashboard_summary(client_http: httpx.AsyncClient) -> dict:
 async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> dict:
     """
     Executes a tool call against the app's own internal REST API, forwarding
+<<<<<<< HEAD
     the real Authorization header so every action is attributed to the
     actual logged-in user -- and, for verify_claim, filling in the
     claimant's identity from that same authenticated user rather than
     trusting the model to supply (or invent) it.
+=======
+    whatever Authorization header the chat request itself carried -- so a
+    report created via chat, or a pickup confirmed via chat, is attributed
+    to the actual logged-in user/admin, exactly as if they'd used the form.
+
+    Note: this calls back into the app's own /reports, /matches, /custody
+    endpoints over real HTTP (to localhost) rather than invoking their
+    handler functions directly in-process. That's fine now that
+    create_report itself no longer blocks the event loop (see reports.py),
+    but it's still an extra network hop for no real benefit -- worth
+    swapping for a direct in-process function call later to remove the
+    self-call entirely.
+>>>>>>> origin/main
     """
     headers = {"Authorization": auth_header} if auth_header else {}
     async with httpx.AsyncClient(base_url=INTERNAL_BASE_URL, timeout=30, headers=headers) as h:
@@ -456,7 +499,15 @@ async def chat(
 
     for _ in range(MAX_TOOL_ITERATIONS):
         try:
-            response = client.models.generate_content(
+            # client.models.generate_content() is a blocking (synchronous)
+            # network call to Gemini -- there's no async client method
+            # being used here. Running it directly inside this async def
+            # would stall the event loop for the whole round-trip, the
+            # same way the embedding call in reports.py used to. Pushing
+            # it to a worker thread with asyncio.to_thread keeps the
+            # server responsive to other requests while Gemini replies.
+            response = await asyncio.to_thread(
+                client.models.generate_content,
                 model=MODEL_NAME,
                 contents=contents,
                 config=config,
@@ -496,5 +547,9 @@ async def chat(
     _CONVERSATIONS[conversation_id] = contents
     return ChatResponse(
         reply="I'm having trouble finishing that request right now -- could you try rephrasing, or use the regular form instead?",
+<<<<<<< HEAD
         conversation_id=conversation_id,
+=======
+        history=req.history,
+>>>>>>> origin/main
     )

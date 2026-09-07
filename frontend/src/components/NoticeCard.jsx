@@ -26,6 +26,8 @@ function timeAgo(dateString) {
  * token: logged-in user's JWT, needed to authorize the delete call
  * onDeleted: called with report.id after a successful delete, so the
  *   parent list can remove the card from state
+ * isAdmin: whether the logged-in user is an admin. Admins can see the
+ *   report's id (for verification at the desk) even if it isn't theirs.
  */
 export default function NoticeCard({
   report,
@@ -35,6 +37,7 @@ export default function NoticeCard({
   currentUserId,
   token,
   onDeleted,
+  isAdmin = false,
 }) {
   const isFound = report.report_type === 'found';
   const thumbnail = report.photo_paths?.[0];
@@ -42,15 +45,25 @@ export default function NoticeCard({
   const isResolved = report.status === 'resolved';
   const photosRedacted = report.photos_redacted && thumbnail;
   const isOwner = Boolean(currentUserId) && report.reporter_id === currentUserId;
+  // Report id is only meaningful to the person who needs to quote it for
+  // verification: the reporter themselves, or an admin handling the desk.
+  const canSeeReportId = isAdmin || isOwner;
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
-  async function handleDelete() {
-    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+  async function confirmDelete() {
+    setDeleting(true);
+    setDeleteError(null);
     try {
       await deleteReport(report.id, token);
+      setConfirmOpen(false);
       onDeleted?.(report.id);
     } catch (err) {
-      alert(err.message || 'Could not delete report.');
+      setDeleteError(err.message || 'Could not delete report.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -143,6 +156,11 @@ export default function NoticeCard({
           </div>
         )}
       </dl>
+      {canSeeReportId && (
+        <p className="notice-report-id mono">
+          ID: {report.id}
+        </p>
+      )}
       <div className="notice-footer">
         <span>{timeAgo(report.created_at || report.item_datetime)}</span>
         {onFindMatches && report.status === 'open' && (
@@ -150,12 +168,51 @@ export default function NoticeCard({
             Find matches →
           </button>
         )}
-        {isOwner && (
-          <button type="button" className="notice-footer-link notice-footer-link--danger" onClick={handleDelete}>
+        {/* No delete once resolved -- the card is now part of the handover
+            record the admin audits, so it must stay put. */}
+        {isOwner && !isResolved && (
+          <button
+            type="button"
+            className="notice-footer-link notice-footer-link--danger"
+            onClick={() => {
+              setDeleteError(null);
+              setConfirmOpen(true);
+            }}
+          >
             Delete
           </button>
         )}
       </div>
+
+      {confirmOpen && (
+        <Modal onClose={() => !deleting && setConfirmOpen(false)} labelledBy="delete-confirm-heading">
+          <h2 id="delete-confirm-heading" className="modal-heading">
+            Delete this report?
+          </h2>
+          <p className="modal-text">
+            “{report.title}” will be removed for good. This can’t be undone.
+          </p>
+          {deleteError && <p className="form-error">{deleteError}</p>}
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="claim-form-cancel"
+              onClick={() => setConfirmOpen(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="submit-btn submit-btn--danger"
+              onClick={confirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </Modal>
+      )}
       {primaryAction && (
         <button type="button" className="notice-primary-action" onClick={primaryAction.onClick}>
           {primaryAction.label}

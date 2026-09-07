@@ -30,10 +30,13 @@ fastapi_app = FastAPI(
     version="0.1.0",
 )
 
-# Allow the React frontend (running on a different port during dev) to call this API
+# Allow the React frontend (a different origin -- different port in dev, a
+# different host in production) to call this API. Origins come from
+# settings.cors_origins (CORS_ORIGINS env var); localhost dev ports are the
+# default -- see app/core/config.py.
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],  # Vite / CRA defaults
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,6 +55,50 @@ def on_startup():
     # switch to Alembic migrations (database/migrations/) before this gets
     # used with real data, since create_all() can't handle schema changes.
     Base.metadata.create_all(bind=engine)
+
+    # Lightweight stand-in for a real migration until Alembic is wired up:
+    # create_all() above never ALTERs an existing table, so newly-added
+    # columns (and column-type changes) on already-created tables have to
+    # be applied by hand. Each statement here must be individually
+    # idempotent -- ADD COLUMN IF NOT EXISTS, or a guarded DO block --
+    # since this runs on every startup.
+    from sqlalchemy import text
+
+    _ADDITIVE_MIGRATIONS = [
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS failed_claim_attempts INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS verified_by_admin VARCHAR(5) DEFAULT 'false'",
+        # User.assigned_building (models/user.py) -- which collection point
+        # an admin works out of. The `building` enum type is created by
+        # create_all() above the first time it sees the model.
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS assigned_building building",
+        # Report.collection_point started life as free-text VARCHAR(200)
+        # and was tightened to the Building enum (models/report.py). Old
+        # rows hold junk like 'p' / 's' / 'Central Library'; normalise the
+        # obvious ones, drop the rest to NULL, then convert the column.
+        # Guarded so it only runs while the column is still VARCHAR.
+        """
+        DO $$
+        BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'reports' AND column_name = 'collection_point'
+               ) = 'character varying' THEN
+                UPDATE reports SET collection_point = 'PRP'
+                    WHERE lower(collection_point) IN ('p', 'prp');
+                UPDATE reports SET collection_point = 'SJT'
+                    WHERE lower(collection_point) IN ('s', 'sjt');
+                UPDATE reports SET collection_point = NULL
+                    WHERE collection_point IS NOT NULL
+                      AND collection_point NOT IN ('PRP', 'SJT');
+                ALTER TABLE reports
+                    ALTER COLUMN collection_point TYPE building
+                    USING collection_point::building;
+            END IF;
+        END $$;
+        """,
+    ]
+    with engine.begin() as conn:
+        for stmt in _ADDITIVE_MIGRATIONS:
+            conn.execute(text(stmt))
 
 
 # Photos are saved to disk under settings.upload_dir (see routers/reports.py's

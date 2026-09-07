@@ -1,18 +1,26 @@
 """
 Endpoints for submitting and listing lost/found reports.
 
-Note: this does NOT compute embeddings synchronously inside the request --
-loading Sentence-Transformers/CLIP on every single report submission would
-make the API slow. In a real deployment you'd push embedding computation
-to a background task (FastAPI's BackgroundTasks, or a queue like Celery).
-For now this endpoint saves the report and computes the embedding inline,
-which is fine for a college-project scale, but is called out here so you
-know it's the first thing to move to a background job under real load.
+Note: this computes the text embedding as part of report creation on a
+worker thread via asyncio.to_thread(), so it never blocks the event loop.
+
+The matching pipeline (run_matching_and_notify -- scoring against every
+open opposite-type report, upserting Match rows, and possibly sending a
+real-time ping + an email) used to be awaited inline here, which meant the
+reporter sat waiting for a full DB scan/scoring pass and a potential SMTP
+round-trip before they ever got their report back. It's now fired off as a
+background asyncio task (_run_matching_safely) right after the report is
+committed: the reporter gets an instant response, and matching/notifying
+happens moments later. The background task opens its own DB session,
+since the request's `db` session closes as soon as the response is
+returned.
 """
 
+import asyncio
+import logging
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -20,7 +28,7 @@ from sqlalchemy import case, and_
 from sqlalchemy.orm import Session
 from app.core.email import send_email
 from app.core.config import settings
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.models.report import (
     Report,
     ReportType,
@@ -30,14 +38,25 @@ from app.models.report import (
     ESCALATION_DAYS_THRESHOLD,
 )
 from app.models.match import Match
-from app.routers.schemas import ReportCreate, ReportOut, ReporterInfoOut
+from app.matching.leak_check import answer_leaks
+from app.matching.verification_guard import llm_leak_check
+from app.routers.schemas import (
+    ReportCreate,
+    ReportOut,
+    ReporterInfoOut,
+    VerificationCheckRequest,
+    VerificationCheckResponse,
+)
 from app.matching.embeddings import encode_text, encode_images
 from app.matching.redaction import redact_photo, originals_dir
 from app.realtime import sio
 from app.models.user import User
-from app.routers.auth import get_current_user, get_current_user_optional
+from app.routers.auth import get_current_user, get_current_user_optional, require_admin
+from app.routers.matches import run_matching_and_notify
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+logger = logging.getLogger("findit.reports")
 
 # Only accept real image types -- anything else gets rejected before it
 # ever touches disk or the CLIP model.
@@ -65,6 +84,36 @@ def _serialize_report(report: Report, viewer: User | None, db: Session) -> Repor
     return out
 
 
+async def _run_matching_safely(report_id: uuid.UUID):
+    """
+    Runs the matching pipeline (score against every open opposite-type
+    report, upsert Match rows, and -- if warranted -- send the real-time
+    "match found" ping and the "possible match" email) as a background
+    task, fully decoupled from the create_report request/response cycle.
+
+    Opens its own DB session because the request-scoped `db` (from
+    Depends(get_db)) is closed as soon as create_report returns -- by the
+    time this task actually runs, that session is gone.
+
+    Swallows and logs any failure here (bad embedding, transient DB
+    hiccup, SMTP failure, etc.) rather than letting it propagate: the
+    report itself is already safely committed regardless of whether
+    matching succeeds, and there's no request left waiting on this to
+    raise anything to.
+    """
+    db = SessionLocal()
+    try:
+        report = db.query(Report).filter(Report.id == report_id).first()
+        if report is None:
+            logger.warning("Report %s vanished before background matching ran", report_id)
+            return
+        await run_matching_and_notify(report, db)
+    except Exception:
+        logger.exception("Matching pipeline failed for report %s", report_id)
+    finally:
+        db.close()
+
+
 @router.post("/", response_model=ReportOut)
 async def create_report(
     payload: ReportCreate,
@@ -88,6 +137,48 @@ async def create_report(
             "correct answer means nobody could ever pass verify_claim.",
         )
 
+    # A verification answer that's already sitting in the public text makes
+    # the whole check pointless -- anyone browsing could pass it. Reject it
+    # here so the finder has to pick something only the owner would know (or
+    # make the description less specific).
+    if payload.report_type == ReportType.FOUND.value and answer_leaks(
+        payload.hidden_answer,
+        payload.title,
+        payload.description,
+        payload.color,
+        payload.brand,
+        payload.category,
+        payload.location_name,
+    ):
+        raise HTTPException(
+            422,
+            "Your verification answer is visible in the public description. "
+            "Pick something only the true owner would know, or make the "
+            "description less specific.",
+        )
+
+    # FOUND: the item was already in the finder's hands when they filed, so
+    # "when" is just now -- we don't ask. LOST: the owner picks the time,
+    # but it can't be in the future or more than two weeks ago (older
+    # losses are past the matching/escalation window anyway).
+    now = datetime.utcnow()
+    if payload.report_type == ReportType.FOUND.value:
+        item_datetime = now
+    else:
+        if payload.item_datetime is None:
+            raise HTTPException(400, "Tell us roughly when you lost it.")
+        item_datetime = payload.item_datetime
+        if item_datetime.tzinfo is not None:
+            item_datetime = item_datetime.astimezone(timezone.utc).replace(tzinfo=None)
+        if item_datetime > now + timedelta(minutes=5):
+            raise HTTPException(422, "The date you lost it can't be in the future.")
+        if item_datetime < now - timedelta(days=14):
+            raise HTTPException(
+                422,
+                "Please report items lost within the last two weeks. For an "
+                "older loss, contact the lost & found desk.",
+            )
+
     report = Report(
         reporter_id=user.id,
         report_type=payload.report_type,
@@ -99,7 +190,7 @@ async def create_report(
         location_name=payload.location_name,
         latitude=payload.latitude,
         longitude=payload.longitude,
-        item_datetime=payload.item_datetime,
+        item_datetime=item_datetime,
         hidden_question=payload.hidden_question,
         hidden_answer=payload.hidden_answer,
         collection_point=payload.collection_point,
@@ -110,8 +201,14 @@ async def create_report(
     )
 
     # Compute text embedding now so it's ready for matching immediately.
+    # Run on a worker thread -- encode_text() is a blocking CPU-bound call
+    # (Sentence-Transformers/CLIP inference), and running it directly on
+    # the event loop would stall every other request the server is
+    # handling (including the chatbot's own internal HTTP calls) until it
+    # finishes. asyncio.to_thread() hands it to a thread pool instead, so
+    # the loop stays free.
     # (Image embedding would be computed similarly once photo upload is wired up.)
-    report.text_embedding = encode_text(payload.description)
+    report.text_embedding = await asyncio.to_thread(encode_text, payload.description)
 
     db.add(report)
     db.commit()
@@ -130,25 +227,70 @@ async def create_report(
         },
     )
 
-    # Confirmation email to the reporter -- separate from the match-found /
-    # item-claimed emails in matches.py, this just confirms the report was
-    # received. Falls back to console-printing if SMTP isn't configured
-    # (see core/email.py docstring), so this never blocks report creation
-    # even in local dev without SMTP set up.
-    kind = "lost" if report.report_type == ReportType.LOST.value or report.report_type == ReportType.LOST else "found"
-    collection_line = (
-        f"\nCollection point (once claimed): {report.collection_point}\n"
-        if kind == "found" and report.collection_point else ""
+    # Build the response now, with the report already safely persisted --
+    # everything below this point (matching against existing open reports,
+    # possibly sending a "match found" ping/email) is fired off as a
+    # background task instead of being awaited here, so the reporter isn't
+    # stuck waiting on a full DB scan/scoring pass or an SMTP round-trip
+    # just to get a "your report was created" response back. See
+    # _run_matching_safely's docstring above for the full reasoning, and
+    # run_matching_and_notify's docstring in matches.py for why this is
+    # the ONLY place matching+notify ever gets triggered (as opposed to
+    # find_matches, which just recomputes/displays without notifying).
+    out = _serialize_report(report, user, db)
+    asyncio.create_task(_run_matching_safely(report.id))
+    return out
+
+
+@router.post("/check-verification", response_model=VerificationCheckResponse)
+async def check_verification_question(payload: VerificationCheckRequest):
+    """
+    Advisory pre-submit check for a FOUND report's verification Q&A: does the
+    answer leak from what a claimant can already see? Runs the cheap string
+    heuristic first, then an LLM pass for the semantic cases it misses.
+
+    Advisory only -- the frontend shows this as an overridable warning while
+    the finder types. The hard gate is the same string check inside
+    POST /reports/ (the LLM result never blocks a submission).
+    """
+    public_text = " ".join(
+        p
+        for p in (
+            payload.title,
+            payload.description,
+            payload.color,
+            payload.brand,
+            payload.category,
+            payload.location_name,
+        )
+        if p
     )
-    send_email(
-        to_email=user.email,
-        subject=f"FindIt Campus: your {kind} report was received",
-        body=(
-            f"Hi {user.name or ''},\n\n"
-            f"Your {kind} item report \"{report.title}\" has been recorded.\n"
-            f"{collection_line}"
-            f"\nWe'll notify you here if a potential match turns up.\n\n"
-            f"-- FindIt Campus"
+
+    if answer_leaks(
+        payload.hidden_answer,
+        payload.title,
+        payload.description,
+        payload.color,
+        payload.brand,
+        payload.category,
+        payload.location_name,
+    ):
+        return VerificationCheckResponse(
+            leaked=True,
+            reason="The answer appears in your public description.",
+        )
+
+    result = await llm_leak_check(
+        public_text=public_text,
+        question=payload.hidden_question or "",
+        answer=payload.hidden_answer or "",
+    )
+    return VerificationCheckResponse(
+        leaked=result["leaked"],
+        reason=result["reason"] or (
+            "A claimant could likely answer this from the public description."
+            if result["leaked"]
+            else ""
         ),
     )
 
@@ -161,6 +303,17 @@ def list_reports(
     viewer: User | None = Depends(get_current_user_optional),
 ):
     query = db.query(Report)
+
+    # The Lost/Found pages are a personal view for regular users: they only
+    # ever see the reports they filed themselves. Browsing everyone's
+    # reports is an admin-only capability (the admin dashboard). Anonymous
+    # callers get nothing -- every Lost/Found route sits behind login.
+    is_admin = viewer is not None and viewer.is_admin == "true"
+    if not is_admin:
+        if viewer is None:
+            return []
+        query = query.filter(Report.reporter_id == viewer.id)
+
     if report_type:
         query = query.filter(Report.report_type == report_type)
 
@@ -215,6 +368,15 @@ def delete_report(
     if report.reporter_id != user.id:
         raise HTTPException(403, "You can only delete your own reports")
 
+    # A resolved report has been through a handover and has a CustodyRecord
+    # attached to its Match -- that's the audit trail an admin relies on, so
+    # it must not be deletable from here. (The frontend also hides the
+    # Delete button once a card is resolved; this is the backstop.)
+    if report.status == ReportStatus.RESOLVED:
+        raise HTTPException(
+            409, "This report has already been resolved and is part of the handover record."
+        )
+
     db.query(Match).filter(
         (Match.lost_report_id == report.id) | (Match.found_report_id == report.id)
     ).delete(synchronize_session=False)
@@ -225,15 +387,19 @@ def delete_report(
 
 
 @router.post("/escalate-stale", response_model=List[ReportOut])
-async def escalate_stale_high_risk(db: Session = Depends(get_db)):
+async def escalate_stale_high_risk(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     """
     Finds FOUND high-risk reports (ID/phone/academic docs) that have sat
     OPEN and unclaimed for ESCALATION_DAYS_THRESHOLD+ days, and flips their
     status to ESCALATED so staff can prioritize following up.
 
-    No cron/scheduler is wired into this stack yet -- this is triggered
-    manually via the "Run escalation check" button on the frontend
-    dashboard (or could be hooked into a scheduled task later).
+    Admin-only -- it's a moderation action that mutates report state, and
+    the "Run escalation check" button that triggers it only shows on the
+    admin dashboard. No cron/scheduler is wired into this stack yet (could
+    be hooked into a scheduled task later).
     """
     cutoff = datetime.utcnow() - timedelta(days=ESCALATION_DAYS_THRESHOLD)
 
@@ -282,6 +448,12 @@ def upload_photos(
     multipart form) so the frontend can create the report first, get an
     id back, then upload photos with a progress indicator -- and so a
     report can still be submitted even if a photo fails to upload.
+
+    This is a plain `def` (not `async def`) on purpose: FastAPI runs sync
+    path operations in its worker thread pool automatically, so the
+    blocking encode_images() call below does NOT stall the event loop the
+    way a blocking call inside an `async def` would. No asyncio.to_thread
+    needed here -- it's already off the loop.
     """
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:

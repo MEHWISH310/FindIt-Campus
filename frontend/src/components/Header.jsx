@@ -1,7 +1,8 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import ThemeToggle from './ThemeToggle';
 import Modal from './Modal';
+import ChangePasswordForm from './ChangePasswordForm';
 import { listReports, listCustodyRecords, listPendingPickups, REPORTS_CHANGED_EVENT } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -12,18 +13,21 @@ const HEADERLESS_ROUTES = ['/login', '/request-access', '/forgot-password', '/se
 
 export default function Header() {
   const [counts, setCounts] = useState({ lost: null, found: null, claimed: null, pickups: null });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
+  const menuRef = useRef(null);
 
   const refreshCounts = useCallback(() => {
     Promise.all([
       listReports('lost'),
       listReports('found'),
-      // Claimed and Pickups are both admin-only nav items now -- no point
-      // fetching either count for a non-admin, since they'll never see
-      // the badge (or the tab itself) anyway.
-      user?.is_admin ? listCustodyRecords() : Promise.resolve(null),
+      // /custody/ (claimed) is open to everyone now -- both admin and
+      // non-admin Claimed tabs read from it, so fetch it for everyone.
+      // Pickups stays admin-only (non-admins never see that tab).
+      listCustodyRecords(),
       user?.is_admin ? listPendingPickups() : Promise.resolve(null),
     ])
       .then(([lost, found, claimed, pickups]) => {
@@ -49,11 +53,37 @@ export default function Header() {
     return () => window.removeEventListener(REPORTS_CHANGED_EVENT, refreshCounts);
   }, [refreshCounts]);
 
-  // Header stays mounted across logout (it just renders null), so the
-  // confirm dialog's open state would otherwise survive and pop up again
-  // on the next login. Clear it whenever the session ends, for any reason.
+  // Close the account dropdown on an outside click or Escape.
   useEffect(() => {
-    if (!user) setLogoutOpen(false);
+    if (!menuOpen) return;
+    function onPointerDown(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
+  // Never leave the dropdown open across a route change.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  // Header stays mounted across logout (it just renders null), so any
+  // open menu / dialog state would otherwise survive and reappear on the
+  // next login. Clear it whenever the session ends, for any reason.
+  useEffect(() => {
+    if (!user) {
+      setMenuOpen(false);
+      setPwOpen(false);
+      setLogoutOpen(false);
+    }
   }, [user]);
 
   // Header only shows once logged in, and never on the auth screens.
@@ -79,12 +109,13 @@ export default function Header() {
             Found
             {counts.found !== null && <span className="nav-count">{counts.found}</span>}
           </NavLink>
-          {user.is_admin && (
-            <NavLink to="/claimed" className={({ isActive }) => (isActive ? 'active' : '')}>
-              Claimed
-              {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
-            </NavLink>
-          )}
+          <NavLink
+            to={user.is_admin ? '/claimed' : '/my-claims'}
+            className={({ isActive }) => (isActive ? 'active' : '')}
+          >
+            Claimed
+            {counts.claimed !== null && <span className="nav-count">{counts.claimed}</span>}
+          </NavLink>
           {user.is_admin && (
             <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
               Pickups
@@ -96,22 +127,76 @@ export default function Header() {
         <div className="site-actions">
           <ThemeToggle />
 
-          {user ? (
-            <div className="site-actions" style={{ gap: 8 }}>
-              <NavLink to="/me" title={user.email} className="header-btn">
-                {user.name || user.email.split('@')[0]}
-              </NavLink>
-              <button type="button" className="header-btn" onClick={() => setLogoutOpen(true)}>
-                Log out
-              </button>
-            </div>
-          ) : (
-            <NavLink to="/login" className="header-btn">
-              Log in
-            </NavLink>
-          )}
+          <div className="account-menu" ref={menuRef}>
+            <button
+              type="button"
+              className="header-btn account-menu-trigger"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title={user.email}
+            >
+              {user.name || user.email.split('@')[0]}
+              <svg
+                className={`account-menu-caret${menuOpen ? ' account-menu-caret--open' : ''}`}
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                aria-hidden="true"
+              >
+                <path
+                  d="m6 9 6 6 6-6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+
+            {menuOpen && (
+              <div className="account-menu-dropdown" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setPwOpen(true);
+                  }}
+                >
+                  Change password
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item account-menu-item--danger"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setLogoutOpen(true);
+                  }}
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {pwOpen && (
+        <Modal onClose={() => setPwOpen(false)} labelledBy="pw-modal-heading">
+          <h2 id="pw-modal-heading" className="modal-heading">
+            Change password
+          </h2>
+          <ChangePasswordForm
+            bare
+            onCancel={() => setPwOpen(false)}
+            onSuccess={() => setTimeout(() => setPwOpen(false), 900)}
+          />
+        </Modal>
+      )}
 
       {logoutOpen && (
         <Modal onClose={() => setLogoutOpen(false)} labelledBy="logout-modal-heading">

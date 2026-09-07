@@ -6,11 +6,34 @@ want `hidden_answer` to leak out in a response schema, even though it's
 a real DB column -- separating the two makes that an explicit choice.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.models.building import Building
+
+
+def _assume_utc(v):
+    """
+    The DB columns backing these fields (created_at, item_datetime,
+    handover_datetime, verified_at -- see app/models/report.py and
+    app/models/custody.py) are plain `DateTime`, populated via
+    `datetime.utcnow()`. That gives a real UTC instant, but as a *naive*
+    Python datetime -- no timezone attached. Pydantic then serializes it
+    to JSON with no "Z"/"+00:00" suffix (e.g. "2026-09-05T14:20:00"),
+    and the frontend's `new Date(...)` interprets a suffix-less string as
+    LOCAL time, not UTC -- silently shifting every timestamp by the
+    browser's UTC offset (5.5 hours for IST).
+
+    This tags the value as UTC before it leaves the API, without touching
+    how it's stored -- so the JSON always carries an explicit offset and
+    the frontend parses it correctly.
+    """
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
 
 
 class ReportCreate(BaseModel):
@@ -23,15 +46,50 @@ class ReportCreate(BaseModel):
     location_name: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    item_datetime: datetime
+    # LOST reports only -- when the owner lost it (must be within the last
+    # week; validated in create_report). FOUND reports ignore this and use
+    # the submission time.
+    item_datetime: Optional[datetime] = None
     # Only relevant when report_type == "found": the question a claimant
     # must answer before contact info is revealed.
     hidden_question: Optional[str] = None
     hidden_answer: Optional[str] = None
-    # Only relevant when report_type == "found": where the finder physically
-    # handed the item to admin, e.g. "Main Gate security desk". This is
-    # what the owner is told once verified -- see ReportOut.collection_point.
+    # Only relevant when report_type == "found": which collection point
+    # admin will hold the item at, e.g. "PRP" or "SJT". This is what the
+    # owner is told once verified -- see ReportOut.collection_point.
     collection_point: Optional[str] = None
+
+    @field_validator("collection_point")
+    @classmethod
+    def _validate_collection_point(cls, v):
+        # Format-only check here -- whether it's *required* (found reports
+        # only) is still enforced in reports.py's create_report, same as
+        # hidden_question/hidden_answer.
+        if v is None or v == "":
+            return None
+        try:
+            return Building(v).value
+        except ValueError:
+            valid = ", ".join(b.value for b in Building)
+            raise ValueError(f"collection_point must be one of: {valid}")
+
+
+class VerificationCheckRequest(BaseModel):
+    """Advisory pre-submit check payload -- everything a claimant would see,
+    plus the proposed verification question + answer."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    color: Optional[str] = None
+    brand: Optional[str] = None
+    location_name: Optional[str] = None
+    hidden_question: Optional[str] = None
+    hidden_answer: Optional[str] = None
+
+
+class VerificationCheckResponse(BaseModel):
+    leaked: bool
+    reason: str = ""
 
 
 class ReporterInfoOut(BaseModel):
@@ -71,8 +129,9 @@ class ReportOut(BaseModel):
     # to see in order to know what they're being asked to prove. Only ever
     # set on FOUND reports; null on LOST reports.
     hidden_question: Optional[str] = None
-    # Only meaningful on FOUND reports -- where admin is physically holding
-    # the item. Shown to the owner once their claim is verified.
+    # Only meaningful on FOUND reports -- which collection point admin is
+    # physically holding the item at ("PRP"/"SJT"). Shown to the owner
+    # once their claim is verified.
     collection_point: Optional[str] = None
     # True while photo_paths point at pixelated copies (high-risk + still
     # unclaimed) -- see matching/redaction.py. Lets the frontend show a
@@ -91,6 +150,11 @@ class ReportOut(BaseModel):
         if isinstance(v, str):
             return v.lower() == "true"
         return bool(v)
+
+    @field_validator("item_datetime", "created_at", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
 
     class Config:
         from_attributes = True
@@ -113,6 +177,11 @@ class ClaimantInfoOut(BaseModel):
     claimant_contact: Optional[str]
     handover_datetime: datetime
 
+    @field_validator("handover_datetime", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
+
 
 class MatchOut(BaseModel):
     id: UUID
@@ -126,6 +195,12 @@ class MatchOut(BaseModel):
     # matches.py's competing_cluster()) -- the frontend shows this as a
     # forced-choice question instead of just a bare score. Null otherwise.
     disambiguation_question: Optional[str] = None
+    # How many wrong claim-answer attempts have been used against this
+    # match so far (see matches.py's MAX_CLAIM_ATTEMPTS). The claim modal
+    # uses this to open straight into the locked state -- instead of
+    # showing an answer box that will just fail -- when a claimant already
+    # burned all their attempts in a previous session.
+    failed_claim_attempts: int = 0
     # Both null unless the requester is authorized to see them -- see the
     # FoundContactOut / ClaimantInfoOut docstrings above.
     found_contact: Optional[FoundContactOut] = None
@@ -163,6 +238,11 @@ class CustodyRecordOut(BaseModel):
     handover_datetime: datetime
     notes: Optional[str]
     identity_verified: bool = False
+    # Only populated by /custody/mine (see list_my_custody_records) -- pulled
+    # from the found report via Match, since CustodyRecord itself doesn't
+    # store this column. Null on /custody/ (admin) and /custody/{id}, which
+    # build straight from the ORM row via from_attributes and never set it.
+    collection_point: Optional[str] = None
 
     @field_validator("identity_verified", mode="before")
     @classmethod
@@ -170,6 +250,11 @@ class CustodyRecordOut(BaseModel):
         if isinstance(v, str):
             return v.lower() == "true"
         return bool(v)
+
+    @field_validator("handover_datetime", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
 
     class Config:
         from_attributes = True
@@ -186,6 +271,31 @@ class CheckAnswerRequest(BaseModel):
 
 class CheckAnswerResponse(BaseModel):
     correct: bool
+    # Set once the claimant has burned all their attempts (see
+    # MAX_CLAIM_ATTEMPTS in matches.py) -- the frontend then stops offering
+    # a retry and points them at the admin desk instead.
+    locked: bool = False
+    attempts_left: Optional[int] = None
+    # Human-readable outcome for a wrong/locked answer (the frontend shows
+    # this verbatim). None on a correct answer.
+    message: Optional[str] = None
+
+
+class AdminVerifyRequest(BaseModel):
+    """An admin completing verification on a student's behalf (they failed
+    online / got locked out, but showed proof in person). The admin types
+    the claimant's identity details in for the record; no hidden answer is
+    needed -- the admin IS the verification here.
+
+    claimant_registration_number and claimant_email are required (not just
+    on the frontend) -- an in-person verification is only as good as the
+    identity record it leaves behind, so both must be captured here just
+    like the online claim form already requires them (see ClaimRequest)."""
+    claimant_name: str
+    claimant_registration_number: str
+    claimant_email: str
+    claimant_contact: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class MyClaimOut(BaseModel):
@@ -194,12 +304,25 @@ class MyClaimOut(BaseModel):
     with actual completed handovers (status='completed') into a single
     timeline, since from the claimant's point of view both are 'things
     I claimed', just at different stages. See custody.py's
-    list_my_claims."""
+    list_my_claims.
+
+    `id` stays as-is for backward compatibility (match id for pending
+    rows, custody record id for completed rows) -- `match_id` is the
+    field the frontend should actually use to display/reference the
+    underlying match, since it's reliably the same kind of id in both
+    branches.
+    """
     id: str
+    match_id: str
     item_name: str
     status: str  # "pending" | "completed"
     handover_datetime: Optional[datetime] = None
     collection_point: Optional[str] = None
+
+    @field_validator("handover_datetime", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
 
 
 class ClaimResponse(BaseModel):
@@ -211,6 +334,10 @@ class ClaimResponse(BaseModel):
     # physically collect the item from admin. Mirrors the found report's
     # collection_point so the frontend doesn't need a second fetch.
     collection_point: Optional[str] = None
+    # True once all attempts are used up -- online claiming is closed for
+    # this match and the claimant must verify in person with an admin.
+    locked: bool = False
+    attempts_left: Optional[int] = None
 
 
 class PendingPickupOut(BaseModel):
@@ -229,6 +356,11 @@ class PendingPickupOut(BaseModel):
     finder: Optional[ReporterInfoOut] = None
     owner: Optional[ReporterInfoOut] = None
     verified_at: datetime
+
+    @field_validator("verified_at", mode="before")
+    @classmethod
+    def _tag_utc(cls, v):
+        return _assume_utc(v)
 
     class Config:
         from_attributes = True

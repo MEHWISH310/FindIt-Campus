@@ -11,7 +11,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, Float, DateTime, Enum, ForeignKey, JSON, String
+from sqlalchemy import Column, Float, DateTime, Enum, ForeignKey, Integer, JSON, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -71,6 +71,15 @@ class Match(Base):
     # against the logged-in user's own User.registration_number in
     # verify_claim before this even gets set.
     pending_claimant_registration_number = Column(String(50), nullable=True)
+
+    # Wrong hidden-answer tries by the lost-report owner against this match.
+    # At MAX_CLAIM_ATTEMPTS (see matches.py) online claiming is locked and
+    # the only way forward is an admin verifying in person
+    # (custody.py's admin_verify_claim, which resets this to 0).
+    failed_claim_attempts = Column(Integer, default=0, nullable=False)
+    # "true" when a VERIFIED status was set by an admin on the claimant's
+    # behalf rather than by the claimant answering the question online.
+    verified_by_admin = Column(String(5), default="false")
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

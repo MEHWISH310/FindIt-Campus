@@ -17,6 +17,7 @@ export default function Footer() {
   }
 
   const year = new Date().getFullYear();
+  const claimedPath = user.is_admin ? '/claimed' : '/my-claims';
 
   return (
     <footer className="site-footer">
@@ -31,24 +32,20 @@ export default function Footer() {
           </p>
         </div>
 
-        <nav className="site-footer-col" aria-label="Browse">
-          <span className="site-footer-heading mono">Browse</span>
-          <NavLink to="/lost">Lost</NavLink>
-          <NavLink to="/found">Found</NavLink>
-          <NavLink to="/claimed">Claimed</NavLink>
-        </nav>
+        <div className="site-footer-nav">
+          <nav className="site-footer-col" aria-label="Browse">
+            <span className="site-footer-heading mono">Browse</span>
+            <NavLink to="/lost">Lost</NavLink>
+            <NavLink to="/found">Found</NavLink>
+            <NavLink to={claimedPath}>Claimed</NavLink>
+          </nav>
 
-        <nav className="site-footer-col" aria-label="Report">
-          <span className="site-footer-heading mono">Report</span>
-          <NavLink to="/report/lost">Something lost</NavLink>
-          <NavLink to="/report/found">Something found</NavLink>
-        </nav>
-
-        <nav className="site-footer-col" aria-label="Account">
-          <span className="site-footer-heading mono">Account</span>
-          <NavLink to="/me">My account</NavLink>
-          <NavLink to="/change-password">Reset password</NavLink>
-        </nav>
+          <nav className="site-footer-col" aria-label="Report">
+            <span className="site-footer-heading mono">Report</span>
+            <NavLink to="/report/lost">Something lost</NavLink>
+            <NavLink to="/report/found">Something found</NavLink>
+          </nav>
+        </div>
       </div>
 
       <div className="site-footer-bottom">

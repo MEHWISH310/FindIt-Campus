@@ -5,6 +5,11 @@ import NoticeCard from '../components/NoticeCard';
 import Modal from '../components/Modal';
 import { useAuth } from '../context/AuthContext';
 
+// Mirrors matches.py's MAX_CLAIM_ATTEMPTS -- used purely to decide whether
+// a match handed to ClaimModal already has no attempts left, so the modal
+// can open straight into the locked view instead of the answer box.
+const MAX_CLAIM_ATTEMPTS = 3;
+
 function isNeedsReview(match) {
   return match.status === 'NEEDS_DISAMBIGUATION' || match.status === 'needs_disambiguation';
 }
@@ -17,9 +22,20 @@ function isVerified(match) {
   return match.status === 'VERIFIED' || match.status === 'verified';
 }
 
+// The percentage we show for a match: the calibrated probability when we
+// have it, otherwise the raw score. null when neither is set.
+function matchPercent(match) {
+  if (match.match_probability != null) return Math.round(match.match_probability * 100);
+  if (match.raw_score != null) return Math.round(match.raw_score * 100);
+  return null;
+}
+
+// Ranked AI matches are only worth showing once they clear 50%.
+const MIN_MATCH_PERCENT = 50;
+
 // Small red-asterisk marker for required-field labels.
 function Required() {
-  return <span style={{ color: '#ef4444' }}> *</span>;
+  return <span style={{ color: '#ef4444' }}>*</span>;
 }
 
 /**
@@ -39,9 +55,15 @@ function Required() {
  *      included) to POST /matches/{id}/verify, which is what actually
  *      records the claim -- it re-checks the answer itself too, so step 1
  *      is a UX nicety, not the real security boundary.
+ *
+ * If `match.failed_claim_attempts` already shows every attempt used up
+ * (e.g. the claimant closed the modal after locking it, then reopened it
+ * later), the modal opens straight into the locked view -- there's no
+ * point showing an answer box that the backend will just reject again.
  */
 function ClaimModal({ match, foundReport, onClaimed, onClose }) {
   const { user } = useAuth();
+  const alreadyLocked = (match.failed_claim_attempts ?? 0) >= MAX_CLAIM_ATTEMPTS;
   const [step, setStep] = useState('answer'); // 'answer' | 'details'
   const [claimantName, setClaimantName] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
@@ -49,6 +71,7 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
   const [hiddenAnswer, setHiddenAnswer] = useState('');
   const [checking, setChecking] = useState(false);
   const [answerError, setAnswerError] = useState(null);
+  const [locked, setLocked] = useState(alreadyLocked); // ran out of attempts -> admin desk
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { verified, message } | null
   const [error, setError] = useState(null);
@@ -62,7 +85,8 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
       if (res.correct) {
         setStep('details');
       } else {
-        setAnswerError('Wrong answer. You can try again.');
+        setAnswerError(res.message || 'Wrong answer. You can try again.');
+        if (res.locked) setLocked(true);
       }
     } catch (err) {
       setAnswerError(err instanceof ApiError ? err.message : 'Could not check the answer.');
@@ -94,6 +118,7 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
         // form for an answer that no longer works.
         setStep('answer');
         setAnswerError(res.message || 'That answer no longer matches. Please try again.');
+        if (res.locked) setLocked(true);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not submit the claim.');
@@ -111,9 +136,29 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
       {result?.verified ? (
         <div className="claim-form claim-form--success">
           <p>{result.message}</p>
-          <button type="button" className="claim-form-cancel" onClick={onClose}>
-            Close
-          </button>
+          <div className="claim-form-actions">
+            <button type="button" className="claim-form-done" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : locked ? (
+        <div className="claim-form">
+          {/* The alarming part -- red, on its own -- and the calmer
+              next-step instruction underneath in normal text, instead of
+              both crammed into one red block or repeated twice. */}
+          <p className="claim-form-error">
+            Verification failed! You've used all {MAX_CLAIM_ATTEMPTS} attempts.
+          </p>
+          <p className="claim-form-question">
+            If this item is really yours, go to the lost &amp; found admin
+            desk to verify in person.
+          </p>
+          <div className="claim-form-actions">
+            <button type="button" className="claim-form-cancel" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
       ) : step === 'answer' ? (
         <form className="claim-form" onSubmit={handleCheckAnswer}>
@@ -145,8 +190,6 @@ function ClaimModal({ match, foundReport, onClaimed, onClose }) {
         </form>
       ) : (
         <form className="claim-form" onSubmit={handleSubmit}>
-          <p className="claim-form-question">Answer verified -- now fill in your details to complete the claim.</p>
-
           <label>
             <span>Your name<Required /></span>
             <input
@@ -222,6 +265,13 @@ function DisambiguationCandidate({ match, sourceId, onChosen }) {
 
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
 
+  const hasProbability = match.match_probability != null;
+  const pct = hasProbability
+    ? Math.round(match.match_probability * 100)
+    : match.raw_score != null
+      ? Math.round(match.raw_score * 100)
+      : null;
+
   useEffect(() => {
     let cancelled = false;
     getReport(counterpartId)
@@ -257,6 +307,14 @@ function DisambiguationCandidate({ match, sourceId, onChosen }) {
       ) : (
         <div className="thread-loading">Couldn't load that report.</div>
       )}
+      {pct != null && (
+        <span
+          className={`score-pill ${!hasProbability ? 'score-pill--estimated' : ''} mono disambig-score`}
+          title={!hasProbability ? 'Estimated from raw score, not yet calibrated against confirmed matches' : undefined}
+        >
+          {pct}% match
+        </span>
+      )}
       {match.disambiguation_question && <p className="disambig-question">{match.disambiguation_question}</p>}
       {error && <p className="claim-form-error">{error}</p>}
       <button type="button" className="disambig-choose" onClick={handleChoose} disabled={submitting}>
@@ -283,10 +341,15 @@ function DisambiguationPrompt({ matches, sourceId, onResolved }) {
   );
 }
 
-function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
+function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner, isAdmin }) {
   const [counterpart, setCounterpart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [claimOpen, setClaimOpen] = useState(false);
+  // Set once this user's claim comes back verified, so the row swaps the
+  // "Claim this item" button for a plain "Item has been claimed" note
+  // without needing a page reload (a reload would infer the same thing
+  // from the match now being VERIFIED).
+  const [claimed, setClaimed] = useState(false);
   const [gatedInfo, setGatedInfo] = useState(null); // { found_contact, claimant_info } | null
 
   const counterpartId = match.lost_report_id === sourceId ? match.found_report_id : match.lost_report_id;
@@ -344,7 +407,13 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
     counterpart?.status === 'open' &&
     !isConfirmed &&
     !verifiedPendingPickup &&
+    !claimed &&
     isSourceOwner;
+
+  // The match ref is shown to the claimant (so they can quote it to admin
+  // if they need in-person verification) and to admins themselves (who
+  // need it to look the match up at the pickup desk).
+  const canSeeMatchRef = isSourceOwner || isAdmin;
 
   return (
     <div
@@ -359,13 +428,23 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
             <NoticeCard
               report={counterpart}
               compact
+              isAdmin={isAdmin}
               primaryAction={claimable ? { label: 'Claim this item', onClick: () => setClaimOpen(true) } : null}
             />
             {isConfirmed && <p className="claim-form-success-note">Already claimed and confirmed.</p>}
+            {claimed && !verifiedPendingPickup && !isConfirmed && (
+              <p className="claim-form-success-note">
+                Item has been claimed
+                {counterpart?.collection_point
+                  ? `. Collect it from Building ${counterpart.collection_point}`
+                  : ''}
+                .
+              </p>
+            )}
             {verifiedPendingPickup && (
               <p className="claim-form-success-note">
                 Verified! Go collect this item from admin
-                {counterpart?.collection_point ? ` at ${counterpart.collection_point}` : ''}.
+                {counterpart?.collection_point ? ` at Building ${counterpart.collection_point}` : ''}.
               </p>
             )}
             {isConfirmed && gatedInfo?.found_contact && (
@@ -391,7 +470,15 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
         // onClaimed only refreshes the source report's status badge -- the
         // modal stays open so the user sees the "Verified!" message and
         // closes it themselves (via the Close button, Escape, or backdrop).
-        <ClaimModal match={match} foundReport={counterpart} onClaimed={onClaimed} onClose={() => setClaimOpen(false)} />
+        <ClaimModal
+          match={match}
+          foundReport={counterpart}
+          onClaimed={() => {
+            setClaimed(true);
+            onClaimed?.();
+          }}
+          onClose={() => setClaimOpen(false)}
+        />
       )}
 
       <div className="thread-connector">
@@ -403,6 +490,11 @@ function ThreadRow({ match, sourceId, index, onClaimed, isSourceOwner }) {
         </span>
         {match.used_signals?.length > 0 && (
           <span className="signals">{match.used_signals.join(', ')}</span>
+        )}
+        {canSeeMatchRef && (
+          <span className="match-ref mono" title="Quote this to the admin desk if you need in-person verification">
+            ref {match.id}
+          </span>
         )}
       </div>
     </div>
@@ -467,7 +559,7 @@ export default function Matches() {
 
   return (
     <div className="matches-page">
-      <Link to="/" className="back-link">
+      <Link to={sourceReport?.report_type === 'found' ? '/found' : '/lost'} className="back-link">
         ← Back
       </Link>
 
@@ -477,7 +569,7 @@ export default function Matches() {
 
       {sourceReport && (
         <div className="source-card-wrap">
-          <NoticeCard report={sourceReport} />
+          <NoticeCard report={sourceReport} isAdmin={user?.is_admin} currentUserId={user?.id} />
         </div>
       )}
 
@@ -487,15 +579,25 @@ export default function Matches() {
         <p className="matches-status status-pulse">Running the matching engine…</p>
       )}
 
-      {matches && matches.length === 0 && (
-        <p className="matches-status">
-          No candidate matches yet. Check back once more reports come in.
-        </p>
-      )}
-
-      {matches && matches.length > 0 && (() => {
+      {matches && (() => {
         const disambiguationCluster = matches.filter(isNeedsReview);
-        const normalMatches = matches.filter((m) => !isNeedsReview(m) && !isRejected(m));
+        // Ranked AI matches: drop rejected, drop the disambiguation cluster,
+        // and only keep the ones scoring above 50%.
+        const normalMatches = matches.filter(
+          (m) =>
+            !isNeedsReview(m) &&
+            !isRejected(m) &&
+            (matchPercent(m) ?? 0) > MIN_MATCH_PERCENT
+        );
+
+        if (disambiguationCluster.length === 0 && normalMatches.length === 0) {
+          return (
+            <p className="matches-status">
+              No candidate matches yet. Check back once more reports come in.
+            </p>
+          );
+        }
+
         return (
           <>
             {disambiguationCluster.length > 0 && (
@@ -515,6 +617,7 @@ export default function Matches() {
                     index={i}
                     onClaimed={refreshSourceReport}
                     isSourceOwner={isSourceOwner}
+                    isAdmin={user?.is_admin}
                   />
                 ))}
               </div>

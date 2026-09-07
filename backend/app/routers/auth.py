@@ -2,8 +2,8 @@
 Auth endpoints.
 
 Two ways an account can exist:
-  1. Admin pre-seeds a row (see seed_users.py / a future admin-add-user
-     tool) with just an email -- registration_number left blank.
+  1. Admin pre-seeds a row (see seed_users.py / seed_admins.py) with just
+     an email -- registration_number left blank.
   2. A student signs up themselves via POST /auth/request-access with an
      email that has no existing row at all -- a fresh account is created
      right there.
@@ -101,6 +101,10 @@ class UserOut(BaseModel):
     registration_number: Optional[str]
     must_set_password: bool
     is_admin: bool = False
+    # "PRP" / "SJT" / null. Only ever set for admins (see
+    # seed_admins.py) -- lets the admin frontend show/scope its own
+    # "Ready for pickup" queue without a second request.
+    assigned_building: Optional[str] = None
 
     @staticmethod
     def from_model(user: User) -> "UserOut":
@@ -112,6 +116,7 @@ class UserOut(BaseModel):
             registration_number=user.registration_number,
             must_set_password=user.must_set_password == "true",
             is_admin=user.is_admin == "true",
+            assigned_building=user.assigned_building.value if user.assigned_building else None,
         )
 
 
