@@ -64,10 +64,6 @@ export default function MyClaimedItems() {
         <h1 className="dashboard-title">Claimed items</h1>
       </div>
 
-      <p className="claimed-items-intro">
-        Your own claims, plus everything else handed over across campus in the last 7 days. Other people's names and contact details stay hidden.
-      </p>
-
       {error && (
         <p className="dashboard-status dashboard-status--error">Couldn't reach the backend: {error}</p>
       )}
