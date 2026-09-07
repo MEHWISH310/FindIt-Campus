@@ -8,3 +8,7 @@ node_modules/
 uploads/
 .DS_Store
 *.code-workspace
+uploads/.DS_Store
+**/.DS_Store
+*.code-workspace
+

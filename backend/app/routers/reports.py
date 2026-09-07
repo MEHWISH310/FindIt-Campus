@@ -18,7 +18,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import case, and_
 from sqlalchemy.orm import Session
-
+from app.core.email import send_email
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.report import (
@@ -117,7 +117,7 @@ async def create_report(
     db.commit()
     db.refresh(report)
 
-    # Real-time notification -- see app/realtime.py. This endpoint is async
+       # Real-time notification -- see app/realtime.py. This endpoint is async
     # specifically so it can await this; the DB calls above stay plain
     # SQLAlchemy (sync), which is fine at this scale (see docstring at top).
     await sio.emit(
@@ -130,8 +130,29 @@ async def create_report(
         },
     )
 
-    return _serialize_report(report, user, db)
+    # Confirmation email to the reporter -- separate from the match-found /
+    # item-claimed emails in matches.py, this just confirms the report was
+    # received. Falls back to console-printing if SMTP isn't configured
+    # (see core/email.py docstring), so this never blocks report creation
+    # even in local dev without SMTP set up.
+    kind = "lost" if report.report_type == ReportType.LOST.value or report.report_type == ReportType.LOST else "found"
+    collection_line = (
+        f"\nCollection point (once claimed): {report.collection_point}\n"
+        if kind == "found" and report.collection_point else ""
+    )
+    send_email(
+        to_email=user.email,
+        subject=f"FindIt Campus: your {kind} report was received",
+        body=(
+            f"Hi {user.name or ''},\n\n"
+            f"Your {kind} item report \"{report.title}\" has been recorded.\n"
+            f"{collection_line}"
+            f"\nWe'll notify you here if a potential match turns up.\n\n"
+            f"-- FindIt Campus"
+        ),
+    )
 
+    return _serialize_report(report, user, db)
 
 @router.get("/", response_model=List[ReportOut])
 def list_reports(

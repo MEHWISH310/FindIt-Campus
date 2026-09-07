@@ -281,10 +281,10 @@ export function getMatch(matchId) {
 }
 /** POST /chatbot/message — send a chat message, get the assistant's reply
  * plus updated conversation history to pass into the next call. */
-export function sendChatMessage(message, history = []) {
+export function sendChatMessage(message, conversationId = null) {
   return request('/chatbot/message', {
     method: 'POST',
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, conversation_id: conversationId }),
   });
 }
 
