@@ -5,29 +5,21 @@ Email sending -- used for:
   - item claimed: notify the FOUND reporter someone claimed their item
 
 Tries, in order:
-  1. Brevo HTTP API (BREVO_API_KEY set) -- sends over HTTPS (port 443),
+  1. Resend HTTP API (RESEND_API_KEY set) -- sends over HTTPS (port 443),
      which works even on hosts that block outbound SMTP ports (Render's
-     free tier blocks 25/465/587 entirely as of Sept 2025). BREVO_SENDER
-     just needs to be a single verified sender in Brevo (Senders & IP ->
-     Senders, verify via the 6-digit code emailed to it) -- no domain
-     purchase or DNS setup required, and once verified you can send to any
-     recipient (unlike Resend's onboarding@resend.dev, which can only send
-     to your own account email).
-  2. Resend HTTP API (RESEND_API_KEY set) -- same HTTPS approach; note the
-     resend.dev test sender can only deliver to your own Resend account
-     email until you verify a domain there.
-  3. SMTP (SMTP_HOST/SMTP_USER/SMTP_PASSWORD set) -- for hosts that do
+     free tier blocks 25/465/587 entirely as of Sept 2025).
+  2. SMTP (SMTP_HOST/SMTP_USER/SMTP_PASSWORD set) -- for hosts that do
      allow outbound SMTP.
-  4. Console print -- so local dev without any of the above still works.
+  3. Console print -- so local dev without either configured still works.
 
-Brevo setup:
-  1. Sign up at brevo.com.
-  2. Senders & IP -> Senders -> add your sending address (e.g. your Gmail),
-     verify it with the code emailed to it.
-  3. SMTP & API -> API Keys -> create a key.
-  4. In backend/.env (or your host's env vars):
-       BREVO_API_KEY=xkeysib-xxxxxxxxxxxx
-       BREVO_SENDER=your.verified.address@gmail.com
+Resend setup:
+  1. Sign up at resend.com, create an API key.
+  2. In backend/.env (or your host's env vars):
+       RESEND_API_KEY=re_xxxxxxxxxxxx
+     RESEND_FROM defaults to onboarding@resend.dev (Resend's shared test
+     sender, works with zero setup). To send from your own address, verify
+     a domain in the Resend dashboard and set RESEND_FROM to an address on
+     it, e.g. noreply@yourdomain.com.
 
 Never put real credentials in code or commit .env -- it should already be
 gitignored.
@@ -40,32 +32,6 @@ import smtplib
 from email.mime.text import MIMEText
 
 from app.core.config import settings
-
-
-def _send_via_brevo(to_email: str, subject: str, body: str) -> None:
-    payload = json.dumps({
-        "sender": {"name": settings.brevo_sender_name, "email": settings.brevo_sender},
-        "to": [{"email": to_email}],
-        "subject": subject,
-        "textContent": body,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://api.brevo.com/v3/smtp/email",
-        data=payload,
-        method="POST",
-        headers={
-            "api-key": settings.brevo_api_key,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            resp.read()
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Brevo API error {e.code}: {detail}") from e
 
 
 def _send_via_resend(to_email: str, subject: str, body: str) -> None:
@@ -108,10 +74,6 @@ def _send_via_smtp(to_email: str, subject: str, body: str) -> None:
 
 
 def send_email(to_email: str, subject: str, body: str) -> None:
-    if settings.brevo_api_key and settings.brevo_sender:
-        _send_via_brevo(to_email, subject, body)
-        return
-
     if settings.resend_api_key:
         _send_via_resend(to_email, subject, body)
         return
@@ -121,7 +83,7 @@ def send_email(to_email: str, subject: str, body: str) -> None:
         return
 
     print(
-        f"\n----- [EMAIL STUB -- no BREVO/RESEND/SMTP configured, see core/email.py docstring] -----\n"
+        f"\n----- [EMAIL STUB -- no RESEND_API_KEY or SMTP_* configured, see core/email.py docstring] -----\n"
         f"To: {to_email}\nSubject: {subject}\n\n{body}\n"
         f"-------------------------------------------------------------------------\n"
     )
