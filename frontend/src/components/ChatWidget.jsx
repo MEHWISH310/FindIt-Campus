@@ -2,11 +2,17 @@ import { useState, useRef, useEffect } from 'react';
 import { sendChatMessage } from '../api/client';
 
 // Floating chat widget, mounted once in App.jsx so it's available on every
-// page. Keeps conversation history in React state only -- refreshing the
-// page starts a new conversation, which is fine for a lost & found helper.
+// page. Message BUBBLES are kept in React state for display only. The
+// actual conversation memory Gemini uses lives server-side, keyed by
+// conversationId -- see backend/app/routers/chatbot.py's module docstring
+// for why (short version: keeping tool-call results server-side stops the
+// assistant from "forgetting" it already created a report or found a
+// match on an earlier turn). Refreshing the page starts a new
+// conversation either way, which is fine for a lost & found helper.
 export default function ChatWidget() {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([]); // [{ role, content }]
+  const [messages, setMessages] = useState([]); // [{ role, content }] -- display only
+  const [conversationId, setConversationId] = useState(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
@@ -26,7 +32,8 @@ export default function ChatWidget() {
     setLoading(true);
 
     try {
-      const res = await sendChatMessage(text, messages);
+      const res = await sendChatMessage(text, conversationId);
+      setConversationId(res.conversation_id);
       setMessages([...nextMessages, { role: 'assistant', content: res.reply }]);
     } catch (err) {
       setMessages([

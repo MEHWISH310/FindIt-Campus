@@ -21,7 +21,7 @@ from PIL import Image
 @lru_cache(maxsize=1)
 def _text_model():
     from sentence_transformers import SentenceTransformer
-    return SentenceTransformer("all-MiniLM-L6-v2")
+    return SentenceTransformer("all-MiniLM-L6-v2", model_kwargs={"low_cpu_mem_usage": False})
 
 
 @lru_cache(maxsize=1)

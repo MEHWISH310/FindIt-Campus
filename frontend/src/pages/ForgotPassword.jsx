@@ -58,7 +58,7 @@ export default function ForgotPassword() {
         )}
 
         <p className="verification-note">
-          Remembered it? <Link to="/login">Log in</Link>
+          Remembered it? <Link to="/login" className="auth-link-accent">Log in</Link>
         </p>
       </div>
     </div>
