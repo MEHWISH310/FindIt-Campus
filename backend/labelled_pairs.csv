@@ -1,0 +1,9 @@
+text_sim,image_sim,distance_m,hours_apart,category_lost,category_found,location_lost,location_found,label
+1.0000001192092896,,14.757304618675557,72.16366603861111,ID Card,ID Card,Central Library,Central Library,1
+1.0,,,23.9870902925,ID Card,ID Card,prp,prp,1
+0.6042696833610535,,,30.310021950833335,Bottle,Bottle,prp,prp,1
+0.5796845555305481,,,25.710021950833333,Water bottle,Bottle,Unknown,prp,0
+0.5405729413032532,,,25.734290138055556,Water bottle,Bottle,Unknown,PRP,1
+0.5551769137382507,,,49.79282670888889,ID Card,ID Card,PRP,Prp,1
+0.8849518895149231,,,119.8047310461111,Wallet,Wallet,prp,PRP,1
+0.5443739295005798,,,63.906480833888885,,ID Card,,,1
