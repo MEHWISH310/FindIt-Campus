@@ -1,189 +1,113 @@
 # FindIt Campus
 
-A geo-temporal fusion framework for intelligent lost-and-found matching on a college campus.
+A Geo-Temporal Fusion Framework for Intelligent Lost and Found Matching with Calibrated Confidence and Asymmetric Verification.
 
 ## Overview
 
-FindIt Campus is a multi-modal lost-and-found platform for VIT. It replaces
-informal recovery methods (WhatsApp groups, notice boards, walking desk to
-desk) with a structured system that scores lost reports against found
-reports using text, images, location, and time, and walks an owner through
-a verified claim and a recorded physical handover.
+FindIt Campus is a lost-and-found platform for a college campus. It replaces WhatsApp groups, notice boards, and a manned desk with a structured workflow: students file lost/found reports, the backend scores every open opposite-type report against them using text, image, location, and time signals, and surfaces ranked candidates with a calibrated match probability. Ownership is checked asymmetrically (a hidden question set by the finder), and every physical handover is written to an append-only custody ledger.
 
-The core idea: a raw similarity number means nothing to a student, so every
-signal is fused into one composite score, and (once there is labelled data)
-that score is calibrated into an interpretable match probability.
+Access is restricted to verified college accounts (`@vitstudent.ac.in` / `@vit.ac.in`).
 
 ---
 
 ## Key Features
 
-### Multi-modal matching
+### Multi-Modal Matching
+- Sentence-Transformers (`all-MiniLM-L6-v2`, 384-dim) for text descriptions
+- CLIP (`ViT-B/32` via `open_clip`, 512-dim) for photos, mean-pooled across all photos on a report
+- Embeddings are stored directly in Postgres via `pgvector`
 
-* Text descriptions encoded with Sentence-Transformers (`all-MiniLM-L6-v2`, 384-d)
-* Photos encoded with OpenCLIP (`ViT-B-32`, openai weights, 512-d), mean-pooled
-  across a report's photos so one blurry shot doesn't sink the match
-* Handles wording differences ("black wallet" vs "dark brown leather wallet")
+### Geo-Temporal Fusion
+- Composite score over six signals: text similarity, image similarity, geo-proximity, time-decay, category match, location match
+- Geo-proximity decays exponentially with a ~300 m scale; time-decay with a ~48 hour scale; distance is computed with the haversine formula
+- Base weights (text 0.20, image 0.25, geo 0.10, time 0.10, category 0.20, location 0.15) are renormalized over whichever signals are actually present, so a report missing a photo or coordinates doesn't get penalized — the weight is redistributed, not lost
 
-### Geo-temporal fusion
+### Structured Field Signals
+- Exact-match and substring checks on the category and location fields, giving an explicit boost that short free-text embeddings often miss
 
-* Composite score = weighted sum of text similarity, image similarity,
-  location proximity (exponential decay, ~300 m half-life), and time
-  proximity (exponential decay, ~48 h half-life)
-* When a signal is missing (no photo, no coordinates), its weight is
-  redistributed across the signals that are present rather than penalising
-  the pair
-* Every match records which signals were used and their weights, so a
-  low-confidence result can be explained ("matched on text + location only")
+### Confidence Calibration
+- Platt scaling (`sklearn.LogisticRegression` on the composite score) turns a raw score into an interpretable match probability, trained on confirmed matches vs. their non-confirmed sibling candidates
+- Expected Calibration Error (ECE) routine to validate calibration quality
+- Until a calibrator has been trained (needs a minimum number of confirmed matches) the API falls back to showing the raw score/ranking
 
-### Confidence-calibrated scoring
+### Smart Disambiguation
+- When the top candidates fall within a 0.05 score margin of each other (and the leading score is at least 0.5), the system raises a targeted, rule-based differentiating question and lets the user pick by forced choice, instead of silently auto-ranking
 
-* A Platt-scaling calibrator (`scikit-learn` logistic regression on the
-  composite score) converts the raw score into a 0–1 match probability
-* Reliability is measured with Expected Calibration Error
-* **Status:** the calibrator is trained offline from confirmed matches
-  (`python -m app.matching.train_calibrator`). Until at least 20 confirmed
-  matches exist, no calibrator is persisted and the UI falls back to the
-  raw score / ranking.
+### Asymmetric Verification
+- The finder sets a private challenge question/answer when filing a found report
+- A claimant must answer it correctly before any contact details are revealed
+- Three failed attempts locks online claiming; recovery is an admin verifying the claimant in person at the collection desk
+- The verification answer is checked against the report's own public description to stop the finder from picking a question whose answer is already visible
 
-### Smart disambiguation
+### Custody Ledger
+- Every confirmed handover (item, claimant, verifier, timestamp, collection point) is written to an append-only `CustodyRecord`, visible on a "Claimed items" page
 
-* If the top candidates are within a small margin of each other *and* the
-  leader clears a minimum plausibility score, the system asks a targeted,
-  rule-based follow-up question instead of guessing
-* The owner picks their item in a forced-choice UI; the rest of the
-  competing cluster is rejected
+### High-Risk Item Handling
+- ID cards, phones, laptops, and academic documents are auto-flagged as high-risk on report creation
+- Their photos are pixelated on the public route and swapped back to the original only once a claim is verified — the full-resolution original is always used for matching, so redaction never degrades match quality
+- Unclaimed high-risk found items are auto-escalated after 7 days via an admin-run check; other lost reports go "stale" after 14 days and are pushed down in listings
 
-### Asymmetric verification
+### Real-Time Notifications
+- Socket.IO ping the moment a new report crosses the match-notification threshold, plus an email (SMTP) for the same event and for a successful claim
+- Notification fires once, at report-creation time — not every time someone reopens the matches page, to avoid duplicate emails
 
-* A found report carries a hidden verification question and answer that
-  never appear in the public listing
-* Only the person who filed the matching lost report can attempt a claim;
-  they must answer the finder's question (checked server-side, case- and
-  whitespace-insensitive)
-* Contact details are revealed only after a successful claim
-* Online attempts are limited to 3; after that the claim locks and the only
-  way forward is in-person verification at the desk
+### Conversational Assistant
+- A chat widget backed by Google Gemini (`gemini-3.1-flash-lite`) with function calling
+- Can create a lost/found report, search for matches, and explain how verification/custody/high-risk handling work, asking one clarifying question at a time
+- Admin users get extra tools through the same chat: a dashboard summary, a list of pending pickups, and confirming a handover
 
-### Verification-answer leak guards
-
-* A deterministic check rejects a found report whose verification answer is
-  already recoverable from its public title/description/attributes
-* An additional LLM advisory check (Google Gemini) catches the semantic
-  cases the string check misses; it is advisory only and fails open
-
-### Custody ledger and handover flow
-
-* A correct online answer moves the match to `VERIFIED` — the item is still
-  with the admin, not yet handed over
-* An admin confirms the physical handover in person, which writes an
-  immutable `CustodyRecord` (item, claimant, verifier, timestamp), marks
-  both reports `RESOLVED`, and emails the finder
-* An admin can also complete verification on a locked-out claimant's behalf
-  once they've proven ownership at the desk
-
-### High-risk item handling
-
-* IDs, phones, laptops, and academic documents are auto-flagged high-risk
-* Their photos are pixelated in the public listing; the clear originals are
-  kept privately for matching and revealed only at handover
-* High-risk found items left unclaimed for 7+ days can be escalated by an
-  admin (no scheduler yet — triggered from the dashboard)
-
-### Collection-point routing (PRP / SJT)
-
-* Each found item is assigned one of two collection points
-* Each admin is tied to one collection point and only sees the pickup queue
-  for items physically held at their own desk
-
-### Accounts and roles
-
-* College-email-only access (`@vitstudent.ac.in`, `@vit.ac.in`)
-* Passwordless signup: a temporary password is emailed, then a real
-  password must be set on first login
-* Regular users see only the reports they filed; admins (seeded separately)
-  see reporter identities and the handover queue
-
-### Conversational assistant
-
-* A chat widget backed by Google Gemini with tool-calling can file a lost
-  or found report, search for matches, and — for admins — summarise the
-  dashboard and confirm a handover, reusing the same REST endpoints as the
-  UI
-
-### Real-time notifications
-
-* Socket.IO events for new reports, escalations, verified claims, and
-  handovers, broadcast to all connected clients
-* Email on the one-time "possible match found" event and on a completed
-  handover
-
-### Progressive Web App
-
-* Installable, with an app-shell precache so the UI loads on flaky campus
-  wifi; lost-and-found data itself is always fetched live
+### Role-Based Views
+- Admins are each tied to a collection point (PRP, SJT, or TT) and see pending pickups, escalations, and can verify/confirm handovers for their desk
+- Non-admin users see a restricted "My Claimed Items" view scoped to their own reports/claims
 
 ---
 
-## Tech stack
+## Tech Stack
 
-### Frontend
-
-* React 18 + Vite
-* React Router
-* `socket.io-client` for live updates
-* `vite-plugin-pwa` (service worker + web manifest)
-
-### Backend
-
-* FastAPI, served as a combined ASGI app with `python-socketio`
-* SQLAlchemy 2.x ORM
-* PyJWT for auth tokens
-* SMTP email (falls back to printing to the console when unconfigured)
-
-### Database
-
-* PostgreSQL with the `pgvector` extension (embeddings stored as `vector`
-  columns for in-database similarity search)
-
-### AI / ML
-
-* `sentence-transformers` — text embeddings
-* `open_clip_torch` — image embeddings
-* `scikit-learn` — score calibration (Platt scaling) and calibration metrics
-* `google-genai` — chatbot tool-calling and the verification leak advisory
+| Layer | Technology |
+|---|---|
+| Frontend | React (Vite), PWA (`vite-plugin-pwa`), `react-router-dom`, `axios`, `socket.io-client` |
+| Backend | FastAPI (Python) |
+| Database | PostgreSQL + `pgvector` (report metadata, embedding vectors, custody records) |
+| Text encoding | Sentence-Transformers (`all-MiniLM-L6-v2`) |
+| Image encoding | CLIP (`open_clip`, `ViT-B/32`) |
+| Calibration | scikit-learn (Platt scaling / logistic regression) |
+| Auth | JWT (`PyJWT`), college-domain-restricted signup with temporary-password onboarding |
+| Real-time | Socket.IO (`python-socketio`) |
+| Email | SMTP |
+| Conversational assistant | Google Gemini (`google-genai`), function calling |
 
 ---
 
-## Project structure
+## Project Structure
 
 ```
 FindIt-Campus/
 ├── backend/
 │   ├── app/
-│   │   ├── core/         # config, security (JWT/hashing), email
-│   │   ├── db/           # SQLAlchemy engine / session
-│   │   ├── matching/     # embeddings, fusion, calibration, redaction, leak checks
-│   │   ├── models/       # Report, Match, CustodyRecord, User, Building
-│   │   ├── routers/      # auth, reports, matches, custody, chatbot
-│   │   ├── main.py       # FastAPI + Socket.IO entrypoint
-│   │   ├── realtime.py   # Socket.IO server + events
-│   │   └── seed_admins.py
+│   │   ├── core/           # config, email, security/auth helpers
+│   │   ├── db/              # SQLAlchemy session/engine
+│   │   ├── matching/         # fusion.py, embeddings.py, calibration.py,
+│   │   │                     # redaction.py, verification_guard.py, leak_check.py
+│   │   ├── models/            # Report, Match, CustodyRecord, User, Building
+│   │   ├── routers/            # reports, matches, custody, auth, chatbot
+│   │   ├── main.py               # FastAPI + Socket.IO entrypoint
+│   │   └── seed_admins.py         # bootstrap admin accounts
 │   ├── tests/
+│   │   └── test_fusion_and_calibration.py
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── api/          # REST client, socket client
-│   │   ├── components/   # Header, ChatWidget, Modal, toasts, ...
-│   │   ├── context/      # AuthContext
-│   │   ├── hooks/        # useTheme
-│   │   ├── pages/        # Landing, Dashboard, ReportForm, Matches, Admin, auth pages
-│   │   ├── styles/
-│   │   └── utils/        # buildings, leak-check helper
-│   ├── index.html
-│   └── vite.config.js
+│   │   ├── api/            # REST client, socket client
+│   │   ├── components/      # header, chat widget, modals, notifications, etc.
+│   │   ├── context/           # auth context
+│   │   ├── pages/               # Landing, Dashboard, ReportForm, Matches,
+│   │   │                        # ClaimedItems, Admin, Login, etc.
+│   │   └── utils/                # buildings, leak-check helpers
+│   └── package.json
 ├── database/
-│   └── migrations/       # reserved for Alembic (not yet wired up)
+│   └── migrations/          # placeholder — schema currently managed by
+│                              # SQLAlchemy create_all() + additive ALTERs on startup
 └── docs/
     ├── diagrams/
     └── evaluation/
@@ -191,63 +115,41 @@ FindIt-Campus/
 
 ---
 
-## Setup
+## Setup Instructions
 
-### Prerequisites
-
-* Python 3.11+
-* Node.js 18+
-* PostgreSQL 14+ with the `pgvector` extension available
-  (`CREATE EXTENSION IF NOT EXISTS vector;` in the target database)
-
-### 1. Clone
-
-```bash
-git clone <repo-url>
-cd FindIt-Campus
-```
-
-### 2. Backend
+### Backend
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Create `backend/.env`:
+Create a `.env` file in `backend/` (never commit it):
 
-```env
+```
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/findit_campus
 SECRET_KEY=change-me
 FRONTEND_BASE_URL=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
-# Optional — email. If blank, emails are printed to the console instead.
-SMTP_HOST=
+SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM=
+SMTP_USER=your.address@gmail.com
+SMTP_PASSWORD=your-16-char-app-password
+SMTP_FROM=your.address@gmail.com
 
-# Optional — enables the chatbot and the LLM verification advisory.
-GEMINI_API_KEY=
+GEMINI_API_KEY=your-gemini-key
 ```
 
-Run the API (tables are auto-created on startup):
+Requires a Postgres database with the `pgvector` extension enabled (`CREATE EXTENSION vector;`). Tables are created automatically on startup; a few additive column migrations also run automatically.
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-Interactive API docs: http://127.0.0.1:8000/docs
+API docs: `http://127.0.0.1:8000/docs`
 
-Seed the two admin accounts (prints their temporary passwords):
-
-```bash
-python -m app.seed_admins
-```
-
-### 3. Frontend
+### Frontend
 
 ```bash
 cd frontend
@@ -255,52 +157,26 @@ npm install
 npm run dev
 ```
 
-The dev server runs on http://localhost:5173 and expects the API at
-`http://localhost:8000` (override with `VITE_API_BASE_URL` in
-`frontend/.env`).
-
-### 4. Tests
-
-```bash
-cd backend
-python tests/test_fusion_and_calibration.py
-```
-
-Covers the fusion scoring math, the disambiguation clustering, and the
-calibrator — the parts that don't need model downloads.
-
 ---
 
-## Evaluation
+## Evaluation Status
 
-Planned evaluation artifacts live under `docs/evaluation/`:
+The fusion and calibration logic is covered by unit tests (`backend/tests/test_fusion_and_calibration.py`): weights always renormalize to 1.0, a missing photo redistributes the image weight across the remaining signals, a text-only report collapses to a text weight of 1.0, the disambiguation clustering behaves correctly on clear-leader / three-way-tie / empty-set boundary cases, and the Platt calibrator is monotonic with a reportable Expected Calibration Error.
 
-* Precision / recall vs text-only and image-only baselines
-* Reliability diagrams and Expected Calibration Error
-  (`MatchCalibrator.expected_calibration_error()`)
-* Impact of disambiguation on claim accuracy
-* Match quality with a missing modality (text-only vs text + image)
-
----
-
-## Roadmap
-
-* Alembic migrations to replace the startup `create_all()` + ad-hoc `ALTER`s
-* Per-user Socket.IO rooms so notifications target the right person
-* Background queue for embedding computation so report creation returns instantly
-* Scheduled escalation sweep (currently manual)
-* Object storage for photos instead of local disk
+Full quantitative evaluation — precision/recall/F1 against text-only and image-only baselines, calibration error and reliability diagrams, and a missing-modality ablation — is the next phase, to be run on a hand-labelled campus dataset alongside a semester-long pilot.
 
 ---
 
 ## Team
 
-* Mehwish
-* Mansi Sharma
-* Aarushi Chaudhary
+- Mehwish 
+- Mansi Sharma
+- Aarushi Chaudhary 
+
+Faculty guide: Dr. Baskaran P
 
 ---
 
 ## License
 
-For academic and research purposes.
+This project is for academic and research purposes.
