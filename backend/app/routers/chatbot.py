@@ -41,7 +41,7 @@ Requires GEMINI_API_KEY in your .env (see core/config.py).
 import asyncio
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import httpx
 from google import genai
 from google.genai import types
@@ -71,6 +71,16 @@ INTERNAL_BASE_URL = "http://localhost:8000"
 # function_call/function_response parts. See module docstring.
 _CONVERSATIONS: dict[str, List[types.Content]] = {}
 
+# Shown to anyone who messages the chat while logged out (no token, or an
+# expired/invalid one). Gemini is never called for these -- the reply is
+# fixed, so a logged-out visitor can't use the assistant (or burn API quota)
+# in any way until they log in.
+LOGIN_REQUIRED_REPLY = (
+    "Hi! I'm the FindIt Campus assistant -- I can help you report a lost or "
+    "found item, check for matches, and claim your item. Please log in to "
+    "get started."
+)
+
 BASE_SYSTEM_PROMPT_TEMPLATE = """Today's date is {today}. Use this as ground
 truth for any date reasoning (e.g. "is this date in the future", "how long
 ago was this") -- never guess or assume what today's date is.
@@ -79,55 +89,83 @@ You are the FindIt Campus assistant -- a chatbot for VIT's lost-and-found
 platform. You can help with:
 
 1. REPORTING a lost or found item.
-   Required fields for EVERY report: title, description, category, color,
-   brand, location_name.
+   First find out whether it is LOST or FOUND (skip this if they already
+   said). Then, BEFORE asking for any value, show the person the COMPLETE
+   field list for that report type in ONE message, so they know exactly what
+   you will need -- marking which fields are mandatory and which are
+   optional. Use exactly these lists:
 
-   Required fields for LOST reports ONLY, additionally: item_datetime --
-   when they lost it. It must not be in the future, and cannot be more
-   than 14 days ago; the backend rejects anything outside that window with
-   a 422 (relay that message plainly if it happens, and ask for a more
-   recent date -- or tell them to contact the lost & found desk directly
-   for an older loss). FOUND reports never need this field; the backend
-   timestamps it automatically at submission time, since a found item was
-   already in the finder's hands the moment they're filing the report.
+   LOST report:
+     Mandatory: title, description, category, location_name (where they lost
+     it -- "Not known" is fine if they truly don't know), item_datetime
+     (when they lost it).
+     Optional: color, brand.
 
-   Required fields for FOUND reports ONLY, additionally: hidden_question,
-   hidden_answer, collection_point (must be exactly one of PRP, SJT, or TT --
-   ask the person which one; do not accept any other location as the
-   collection_point even if that's where the item was actually found -- the
-   physical finding location goes in location_name, collection_point is
-   always one of those three admin desks).
+   FOUND report:
+     Mandatory: title, description (this is PUBLIC -- anyone browsing can
+     read it, so it must not contain the verification answer), category,
+     location_name (where it was found), hidden_question, hidden_answer,
+     collection_point.
+     Optional: color, brand.
 
-   Before calling create_report for a FOUND report, call check_verification
-   with the description and the hidden_question/hidden_answer to make sure
-   the answer doesn't leak from the public description (e.g. the color is
-   already in the description AND the question asks for the color). If it
-   comes back leaked: true, tell the person and ask for a better question
-   or answer before proceeding.
-    
-   NEVER call create_report for a FOUND report without hidden_question AND
-   hidden_answer already having been explicitly asked for and answered by
-   the person earlier in THIS conversation -- these are not optional and
-   must never be left blank, invented, or inferred from other fields (e.g.
-   never invent "what color is it" as the hidden question when color was
-   already given publicly). If you're about to call create_report and you
-   cannot point to the exact message where the person gave you these two
-   values, STOP and ask before calling the tool.
+   category must be exactly one of: Wallet, Phone, Laptop, ID Card, Keys,
+   Bag, Bottle, Earbuds, Books, Other -- list these when you ask for it, and
+   if their item doesn't fit, use Other.
 
-   You MUST explicitly ask for and receive an answer for EVERY required
-   field above, one at a time, before calling create_report. Do not skip
-   a field just because the person didn't mention it unprompted, and do
-   not guess, assume, or fill in a plausible-sounding value for any field
-   yourself -- every value must come from something the person actually
-   told you. If a non-required detail is unknown ("I don't remember the
-   brand"), that's fine to leave blank, but you still must have asked.
-   Call create_report ONLY ONCE you have every required field, and ONLY
-   ONCE per item -- if it already succeeded earlier in this conversation
-   for this item, do not call it again; reuse the report_id you got back.
+   In that same first message also tell them that photos and map
+   coordinates can't be added in chat -- they can only be attached through
+   the report form (the "Report lost" / "Report found" button), so if they
+   want to add photos they should use that instead.
 
-   If unsure whether something is allowed beyond what's stated here, call
-   create_report and see what happens -- if the backend rejects it, relay
-   its exact error message plainly rather than guessing why.
+   Then ask for the MANDATORY fields one at a time, in the order listed
+   above. Never skip a mandatory field, never combine it with a guess, and
+   never fill in a plausible-sounding value yourself -- every value must
+   come from something the person actually told you in THIS conversation.
+   After the mandatory fields, ask once for each optional field (color,
+   brand); if they say skip / don't know, leave it blank and move on.
+
+   Rules for specific fields:
+   - LOST item_datetime must not be in the future and cannot be more than
+     14 days ago; the backend rejects anything outside that window with a
+     422 (relay that message plainly and ask for a more recent date -- or
+     tell them to contact the lost & found desk directly for an older
+     loss). FOUND reports never need this field; the backend timestamps it
+     automatically at submission time.
+   - collection_point (FOUND only) must be exactly one of PRP, SJT, or TT --
+     ask the person which one; do not accept any other location as the
+     collection_point even if that's where the item was actually found --
+     the physical finding location goes in location_name, collection_point
+     is always one of those three admin desks.
+   - NEVER invent hidden_question or hidden_answer, and never infer them
+     from other fields (e.g. never make up "what color is it" as the
+     question when color was already given publicly). If you cannot point
+     to the exact message where the person gave you these two values, STOP
+     and ask before going further.
+   - For a FOUND report, as soon as you have the description plus the
+     hidden_question and hidden_answer, call check_verification to make
+     sure the answer doesn't leak from the public description. If it comes
+     back leaked: true, tell the person and ask for a better question or
+     answer before proceeding.
+
+   When every mandatory field (and the optional ones you asked about) is in
+   hand, show a short summary listing EVERY value -- for a FOUND report,
+   show the hidden question and answer too -- and ask "Shall I submit
+   this?". Call create_report ONLY after they clearly say yes. If they want
+   to change something, update it and show the summary again. The backend
+   also refuses create_report and lists the missing fields if a mandatory
+   one is absent -- if that happens, ask the person for exactly those
+   fields; do not retry with guessed values.
+
+   Call create_report ONLY ONCE per item -- if it already succeeded earlier
+   in this conversation for this item, do not call it again; reuse the
+   report_id you got back. If create_report fails with a timeout or any
+   unclear error, do NOT call it again straight away -- the report may
+   still have been saved; the system checks for that itself. If a result
+   says already_created: true, the report already exists: tell the person
+   it's already filed (do not create another). If unsure whether something is allowed beyond
+   what's stated here, call create_report and see what happens -- if the
+   backend rejects it, relay its exact error message plainly rather than
+   guessing why.
 
    After you successfully create a report, mention these real time-based
    platform behaviors so the person knows what to expect (briefly, one
@@ -234,7 +272,9 @@ platform. You can help with:
    A confirmation email is sent automatically when a report is created.
 
 Ask clarifying questions one at a time. Keep responses short and
-conversational -- this is a chat widget, not an essay.
+conversational -- this is a chat widget, not an essay. The chat shows plain
+text only, so do not use markdown (no ** bold, no # headings); use line
+breaks and simple "- " dashes for lists.
 """
 
 ADMIN_SYSTEM_PROMPT_ADDITION = """
@@ -246,6 +286,15 @@ You are currently talking to an ADMIN. In addition to everything above, you can:
 12. Confirm a handover (confirm_handover) once the admin explicitly says
     they've physically handed an item to its claimant. Never call this
     just because it was asked about -- only on an explicit confirmation.
+13. List the actual reports platform-wide (list_reports). Use it whenever the
+    admin asks to see, list, or look up reports -- e.g. "show all found
+    reports", "which lost reports are still open", "any high-risk items
+    escalated?". Pass report_type ("lost"/"found") and/or status
+    ("open"/"matched"/"resolved"/"escalated") when they narrow it down.
+    get_dashboard_summary only gives COUNTS of open items -- it is NOT the
+    full list, and you must never tell the admin that you can't list
+    reports. Present the results as a short, readable list (title, category,
+    where, status), and mention the total count.
 
 Note: check_answer/verify_claim will correctly fail (403) if used on a
 report that isn't the logged-in admin's own -- only the actual reporter
@@ -254,6 +303,24 @@ trying to work around it.
 
 Be concise -- a few short lines, not a long report. This is a chat widget.
 """
+
+# Mirrors CATEGORIES in frontend/src/pages/ReportForm.jsx -- keep the two in
+# sync. Chat-created reports must use the same fixed list as the form so
+# category matching (exact) and high-risk detection (ID Card / Phone /
+# Laptop) behave identically no matter how a report was filed.
+REPORT_CATEGORIES = [
+    "Wallet", "Phone", "Laptop", "ID Card", "Keys",
+    "Bag", "Bottle", "Earbuds", "Books", "Other",
+]
+_CATEGORY_BY_LOWER = {c.lower(): c for c in REPORT_CATEGORIES}
+
+# Mirrors the Building enum (models/building.py).
+COLLECTION_POINTS = ("PRP", "SJT", "TT")
+
+# Mandatory fields, matching the * fields on the report form.
+_REQUIRED_BASE = ["title", "description", "category", "location_name"]
+_REQUIRED_LOST = ["item_datetime"]
+_REQUIRED_FOUND = ["hidden_question", "hidden_answer", "collection_point"]
 
 USER_TOOLS = [
     types.FunctionDeclaration(
@@ -280,14 +347,18 @@ USER_TOOLS = [
     types.FunctionDeclaration(
         name="create_report",
         description=(
-            "Create a lost or found item report. Only call this once you have "
-            "explicitly asked for and received every required field listed in "
-            "the system prompt -- for report_type='lost', that includes "
-            "item_datetime (not in the future, not more than 14 days ago); "
-            "for report_type='found', that includes hidden_question, "
-            "hidden_answer, and collection_point (exactly 'PRP', 'SJT', or "
-            "'TT'), and you must have already called check_verification and "
-            "confirmed leaked was false. Call this at most once per item "
+            "Create a lost or found item report. Only call this after the "
+            "person has seen the full field list, you have explicitly asked "
+            "for and received EVERY mandatory field, shown them a summary "
+            "and they said yes. Mandatory for LOST: title, description, "
+            "category, location_name, item_datetime (not in the future, not "
+            "more than 14 days ago). Mandatory for FOUND: title, "
+            "description, category, location_name, hidden_question, "
+            "hidden_answer, collection_point (exactly 'PRP', 'SJT', or "
+            "'TT'), and you must already have called check_verification "
+            "and confirmed leaked was false. color and brand are optional. "
+            "The server rejects the call and lists what is missing if a "
+            "mandatory field is absent. Call this at most once per item "
             "per conversation."
         ),
         parameters=types.Schema(
@@ -296,10 +367,17 @@ USER_TOOLS = [
                 "report_type": types.Schema(type=types.Type.STRING, enum=["lost", "found"]),
                 "title": types.Schema(type=types.Type.STRING),
                 "description": types.Schema(type=types.Type.STRING),
-                "category": types.Schema(type=types.Type.STRING),
-                "color": types.Schema(type=types.Type.STRING),
-                "brand": types.Schema(type=types.Type.STRING),
-                "location_name": types.Schema(type=types.Type.STRING),
+                "category": types.Schema(
+                    type=types.Type.STRING,
+                    enum=REPORT_CATEGORIES,
+                    description="Mandatory. Must be one of the listed categories -- use 'Other' if nothing fits.",
+                ),
+                "color": types.Schema(type=types.Type.STRING, description="Optional."),
+                "brand": types.Schema(type=types.Type.STRING, description="Optional."),
+                "location_name": types.Schema(
+                    type=types.Type.STRING,
+                    description="Mandatory. Where it was lost (LOST) or found (FOUND).",
+                ),
                 "item_datetime": types.Schema(
                     type=types.Type.STRING,
                     description=(
@@ -456,6 +534,29 @@ USER_TOOLS = [
 
 ADMIN_TOOLS = [
     types.FunctionDeclaration(
+        name="list_reports",
+        description=(
+            "Admin only. List the actual lost/found reports across the whole "
+            "platform (not just the admin's own). Optionally filter by "
+            "report_type ('lost' or 'found') and/or status ('open', "
+            "'matched', 'resolved', 'escalated'). Use this when the admin "
+            "asks to see/list/look up reports. Returns total count plus, per "
+            "report: id, title, report_type, status, category, color, brand, "
+            "location_name, collection_point, is_high_risk, days_open, "
+            "created_at, reporter_name."
+        ),
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "report_type": types.Schema(type=types.Type.STRING, enum=["lost", "found"]),
+                "status": types.Schema(
+                    type=types.Type.STRING,
+                    enum=["open", "matched", "resolved", "escalated"],
+                ),
+            },
+        ),
+    ),
+    types.FunctionDeclaration(
         name="get_dashboard_summary",
         description="Admin only. Quick summary: open lost reports, open found reports, unresolved high-risk items, items awaiting pickup.",
         parameters=types.Schema(type=types.Type.OBJECT, properties={}),
@@ -518,6 +619,188 @@ async def _get_dashboard_summary(client_http: httpx.AsyncClient) -> dict:
     }
 
 
+# create_report can legitimately take a while (the first report after a
+# server restart loads the text-embedding model before it can respond), so it
+# gets a much longer timeout than ordinary tool calls. A short timeout was a
+# duplicate-report trap: the client gave up, but the backend finished and
+# saved the report anyway, and the model then "retried".
+CREATE_REPORT_TIMEOUT = 120
+
+# An identical report (same type, title and description) by the same person
+# within this window is treated as the SAME report, not a new one.
+DUPLICATE_WINDOW_MINUTES = 10
+
+
+def _norm_text(value) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def _parse_utc(value) -> Optional[datetime]:
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+async def _find_recent_duplicate(client_http: httpx.AsyncClient, payload: dict) -> Optional[dict]:
+    """
+    Looks for a report this user already filed moments ago with the same
+    type + title + description. Used (a) before every create_report, so a
+    model that calls it twice -- or twice in one turn, or "retries" after a
+    timeout -- can't file the same item twice, and (b) after a timeout, to
+    find out whether the report was actually saved. Returns that existing
+    report (as the API serialised it), or None.
+    """
+    me_resp = await client_http.get("/auth/me")
+    if me_resp.status_code != 200:
+        return None
+    my_id = me_resp.json().get("id")
+
+    resp = await client_http.get("/reports/", params={"report_type": payload["report_type"]})
+    if resp.status_code != 200:
+        return None
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
+    wanted_title = _norm_text(payload.get("title"))
+    wanted_desc = _norm_text(payload.get("description"))
+    for r in resp.json():
+        if r.get("reporter_id") != my_id:
+            continue
+        created = _parse_utc(r.get("created_at"))
+        if created is None or created < cutoff:
+            continue
+        if _norm_text(r.get("title")) == wanted_title and _norm_text(r.get("description")) == wanted_desc:
+            return r
+    return None
+
+
+def _already_created(existing: dict) -> dict:
+    return {
+        **existing,
+        "already_created": True,
+        "note": (
+            "This report was already created moments ago, so nothing new was "
+            "created. Tell the person it is already filed and reuse this id."
+        ),
+    }
+
+
+def _prepare_report_payload(tool_input: dict) -> tuple[dict, Optional[dict]]:
+    """
+    Server-side gate for create_report: the model is told in the prompt to
+    collect every mandatory field, but a prompt can't force it to. This
+    runs BEFORE anything is sent to POST /reports/ and refuses the call --
+    returning a message the model can act on -- if a mandatory field is
+    missing or invalid. Also cleans the payload: trims whitespace, drops
+    blank optional fields, and snaps category / collection_point to their
+    canonical spelling ("id card" -> "ID Card", "prp" -> "PRP").
+
+    Returns (clean_payload, problem). problem is None when it's OK to submit.
+    """
+    data = {}
+    for key, value in tool_input.items():
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, ""):
+            continue
+        data[key] = value
+
+    report_type = str(data.get("report_type", "")).lower()
+    if report_type not in ("lost", "found"):
+        return data, {
+            "error": "report_type must be 'lost' or 'found'.",
+            "instruction": "Do NOT create the report yet -- ask the person whether the item is lost or found.",
+        }
+    data["report_type"] = report_type
+
+    required = _REQUIRED_BASE + (_REQUIRED_LOST if report_type == "lost" else _REQUIRED_FOUND)
+    missing = [f for f in required if f not in data]
+    invalid = {}
+
+    if "category" in data:
+        canonical = _CATEGORY_BY_LOWER.get(str(data["category"]).lower())
+        if canonical:
+            data["category"] = canonical
+        else:
+            invalid["category"] = "must be one of: " + ", ".join(REPORT_CATEGORIES)
+
+    if "collection_point" in data:
+        point = str(data["collection_point"]).upper()
+        if point in COLLECTION_POINTS:
+            data["collection_point"] = point
+        else:
+            invalid["collection_point"] = "must be exactly one of: " + ", ".join(COLLECTION_POINTS)
+
+    if missing or invalid:
+        return data, {
+            "error": "Report NOT created -- mandatory information is missing or invalid.",
+            "missing_fields": missing,
+            "invalid_fields": invalid,
+            "instruction": (
+                "Do NOT retry with guessed or invented values. Ask the person, "
+                "one at a time, for each missing/invalid field, then show the "
+                "summary and get their yes before calling create_report again."
+            ),
+        }
+
+    return data, None
+
+
+# Cap on how many reports one list_reports call hands back to the model, so a
+# big platform can't blow up the context window. `total` always reports the
+# real count, and `truncated` tells the model (and so the admin) more exist.
+LIST_REPORTS_MAX = 50
+
+
+async def _list_reports(client_http: httpx.AsyncClient, tool_input: dict) -> dict:
+    """
+    Admin-only list of reports, built from the existing GET /reports/ (which
+    already returns every report to an admin and takes a report_type filter).
+    Trimmed to the fields the assistant actually needs -- no photo paths,
+    embeddings, or hidden answers -- and only the reporter's NAME (no
+    email/phone) is passed along, to keep personal details out of the model
+    context.
+    """
+    params = {}
+    if tool_input.get("report_type"):
+        params["report_type"] = tool_input["report_type"]
+
+    resp = await client_http.get("/reports/", params=params)
+    if resp.status_code != 200:
+        return {"error": resp.text, "status_code": resp.status_code}
+
+    reports = resp.json()
+    wanted_status = tool_input.get("status")
+    if wanted_status:
+        reports = [r for r in reports if r.get("status") == wanted_status]
+
+    trimmed = [
+        {
+            "id": r.get("id"),
+            "title": r.get("title"),
+            "report_type": r.get("report_type"),
+            "status": r.get("status"),
+            "category": r.get("category"),
+            "color": r.get("color"),
+            "brand": r.get("brand"),
+            "location_name": r.get("location_name"),
+            "collection_point": r.get("collection_point"),
+            "is_high_risk": r.get("is_high_risk"),
+            "days_open": r.get("days_open"),
+            "created_at": r.get("created_at"),
+            "reporter_name": (r.get("reporter") or {}).get("name"),
+        }
+        for r in reports[:LIST_REPORTS_MAX]
+    ]
+    return {
+        "total": len(reports),
+        "returned": len(trimmed),
+        "truncated": len(reports) > LIST_REPORTS_MAX,
+        "reports": trimmed,
+    }
+
+
 async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> dict:
     """
     Executes a tool call against the app's own internal REST API, forwarding
@@ -532,7 +815,31 @@ async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> 
             if name == "check_verification":
                 resp = await h.post("/reports/check-verification", json=tool_input)
             elif name == "create_report":
-                resp = await h.post("/reports/", json=tool_input)
+                payload, problem = _prepare_report_payload(tool_input)
+                if problem:
+                    return problem
+
+                # Never file the same item twice (see _find_recent_duplicate).
+                existing = await _find_recent_duplicate(h, payload)
+                if existing:
+                    return _already_created(existing)
+
+                try:
+                    resp = await h.post("/reports/", json=payload, timeout=CREATE_REPORT_TIMEOUT)
+                except httpx.TimeoutException:
+                    # The backend may have finished saving even though we
+                    # stopped waiting -- check before telling the model it
+                    # failed, or it will retry and create a duplicate.
+                    existing = await _find_recent_duplicate(h, payload)
+                    if existing:
+                        return _already_created(existing)
+                    return {
+                        "error": (
+                            "The request timed out and the report does not appear "
+                            "to have been saved. Tell the person it didn't go "
+                            "through and ask if they'd like to try again."
+                        )
+                    }
             elif name == "find_matches":
                 resp = await h.post(f"/matches/find/{tool_input['report_id']}")
             elif name == "get_report":
@@ -584,6 +891,8 @@ async def _run_tool(name: str, tool_input: dict, auth_header: Optional[str]) -> 
                 resp = await h.delete(f"/reports/{tool_input['report_id']}")
             elif name == "get_dashboard_summary":
                 return await _get_dashboard_summary(h)
+            elif name == "list_reports":
+                return await _list_reports(h, tool_input)
             elif name == "list_pending_pickups":
                 resp = await h.get("/custody/admin/pending-pickups")
             elif name == "confirm_handover":
@@ -614,10 +923,22 @@ async def chat(
     authorization: Optional[str] = Header(None),
     user: Optional[User] = Depends(get_current_user_optional),
 ):
-    is_admin = bool(user and user.is_admin == "true")
+    # Logged-out (or expired-token) visitors only ever get the fixed intro +
+    # "please log in" reply -- no Gemini call, no tools, no stored history.
+    if user is None:
+        return ChatResponse(
+            reply=LOGIN_REQUIRED_REPLY,
+            conversation_id=req.conversation_id or "",
+        )
+
+    is_admin = user.is_admin == "true"
 
     conversation_id = req.conversation_id or str(uuid.uuid4())
-    contents = _CONVERSATIONS.get(conversation_id, [])
+    # History is keyed by BOTH the user and the conversation_id, so one
+    # account can never continue (or read the tool results of) another
+    # account's conversation, even if the same browser tab is reused.
+    conv_key = f"{user.id}:{conversation_id}"
+    contents = _CONVERSATIONS.get(conv_key, [])
 
     today_str = datetime.utcnow().strftime("%Y-%m-%d")
     system_prompt = BASE_SYSTEM_PROMPT_TEMPLATE.format(today=today_str) + (
@@ -655,7 +976,7 @@ async def chat(
         if not function_calls:
             reply_text = "".join(p.text for p in candidate_parts if p.text)
             contents.append(types.Content(role="model", parts=[types.Part(text=reply_text)]))
-            _CONVERSATIONS[conversation_id] = contents
+            _CONVERSATIONS[conv_key] = contents
             return ChatResponse(reply=reply_text, conversation_id=conversation_id)
 
         contents.append(types.Content(role="model", parts=candidate_parts))
@@ -675,7 +996,7 @@ async def chat(
             )
         contents.append(types.Content(role="user", parts=function_response_parts))
 
-    _CONVERSATIONS[conversation_id] = contents
+    _CONVERSATIONS[conv_key] = contents
     return ChatResponse(
         reply="I'm having trouble finishing that request right now -- could you try rephrasing, or use the regular form instead?",
         conversation_id=conversation_id,
