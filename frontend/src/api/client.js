@@ -108,6 +108,19 @@ export function checkVerificationQuestion(payload) {
   });
 }
 
+/**
+ * POST /voice-form/extract : turn one English voice transcript into
+ * suggested form fields. Read-only suggestion -- it never creates a report.
+ * `payload.current_fields` must never include hidden_answer (see
+ * utils/voiceForm.js's pickVoiceFields, which whitelists what is sent).
+ */
+export function extractVoiceFields(payload) {
+  return request('/voice-form/extract', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** POST /matches/find/{report_id} : run the AI matching pipeline for a report. */
 export function findMatches(reportId) {
   return request(`/matches/find/${reportId}`, { method: 'POST' });

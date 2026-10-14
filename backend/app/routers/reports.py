@@ -137,6 +137,16 @@ async def create_report(
             "correct answer means nobody could ever pass verify_claim.",
         )
 
+    # The owner is told to collect a found item at this point once verified,
+    # so a found report without one is a dead end. (Format -- PRP/SJT/TT --
+    # is already validated by ReportCreate; this only enforces presence.)
+    if payload.report_type == ReportType.FOUND.value and not payload.collection_point:
+        raise HTTPException(
+            400,
+            "Found reports need a collection_point (PRP, SJT or TT) so the "
+            "owner knows where to collect the item.",
+        )
+
     # A verification answer that's already sitting in the public text makes
     # the whole check pointless -- anyone browsing could pass it. Reject it
     # here so the finder has to pick something only the owner would know (or

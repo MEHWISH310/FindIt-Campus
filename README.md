@@ -56,6 +56,15 @@ Access is restricted to verified college accounts (`@vitstudent.ac.in` / `@vit.a
 - Can create a lost/found report, search for matches, and explain how verification/custody/high-risk handling work, asking one clarifying question at a time
 - Admin users get extra tools through the same chat: a dashboard summary, a list of pending pickups, and confirming a handover
 
+### Fill by Voice (English only)
+- A **Fill by Voice** button next to the Lost/Found buttons (Dashboard header and Landing page) opens the normal report form with a voice panel. Speak in English; the assistant fills the form, asks follow-up questions for missing required details, and every field stays editable by hand
+- Nothing is submitted automatically: the form's own **Submit report** button is the only way to save a report, and it still goes through `POST /reports/`
+- Speech-to-text uses the browser's Web Speech API (no extra API key or paid service). Locale is the single constant `SPEECH_LOCALE` (`en-IN`) in `frontend/src/hooks/useSpeechRecognition.js`
+- Interpretation reuses the existing Gemini setup through one extraction-only endpoint, `POST /voice-form/extract` (login required, no tools, per-user rate limit, output re-validated on the server, nothing stored or logged)
+- Found items: the collection point (PRP, SJT or TT) is collected by voice; the verification question can be spoken but the answer is always typed and is never sent to Gemini by this feature. Found reports now require a collection point on the server as well
+- **Browser support:** works in Chromium browsers (Chrome, Edge) and some Safari versions; Firefox generally has no support. Unsupported browsers, a denied microphone, or an unavailable Gemini service show a message and leave the manual form usable
+- **Privacy and cost:** speech recognition is not guaranteed to be free, private or offline. In Chrome the audio is sent to Google's speech service and an internet connection is required. The transcript is then sent to this app's server and to Gemini. Gemini free-tier limits depend on your project; check them at https://aistudio.google.com/rate-limit. If the quota is exhausted the assistant says so and the manual form still works
+
 ### Role-Based Views
 - Admins are each tied to a collection point (PRP, SJT, or TT) and see pending pickups, escalations, and can verify/confirm handovers for their desk
 - Non-admin users see a restricted "My Claimed Items" view scoped to their own reports/claims
@@ -155,6 +164,13 @@ API docs: `http://127.0.0.1:8000/docs`
 cd frontend
 npm install
 npm run dev
+```
+
+### Tests
+
+```bash
+cd backend && pip install -r requirements-dev.txt && pytest tests/test_voice_form.py
+cd frontend && npm test
 ```
 
 ---

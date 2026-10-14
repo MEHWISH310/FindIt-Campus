@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { createReport, uploadPhotos, checkVerificationQuestion, ApiError } from '../api/client';
 import { answerLeaks } from '../utils/leakCheck';
 import { COLLECTION_POINTS } from '../utils/buildings';
+import { CATEGORIES } from '../utils/categories';
+import VoiceAssistant from '../components/VoiceAssistant';
+import MicIcon from '../components/MicIcon';
 
 const ANSWER_LEAK_MESSAGE =
   'That answer is visible in your description. Pick something only the owner would know.';
@@ -19,19 +22,6 @@ function toLocalInput(d) {
 
 const MAX_PHOTOS = 5;
 const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB, matches backend's MAX_FILE_SIZE_BYTES
-
-const CATEGORIES = [
-  'Wallet',
-  'Phone',
-  'Laptop',
-  'ID Card',
-  'Keys',
-  'Bag',
-  'Bottle',
-  'Earbuds',
-  'Books',
-  'Other',
-];
 
 const emptyForm = {
   title: '',
@@ -52,6 +42,10 @@ export default function ReportForm() {
   const { type } = useParams(); // 'lost' | 'found'
   const isFound = type === 'found';
   const navigate = useNavigate();
+  // "Fill by Voice" opens with ?voice=1 (from the Dashboard / Landing
+  // buttons). It only fills this same form; submitting stays manual.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const voiceOpen = searchParams.get('voice') === '1';
 
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -89,6 +83,16 @@ export default function ReportForm() {
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  // Voice fills several fields at once. Same state as typing, so every
+  // field stays editable by hand and nothing is submitted.
+  function applyVoiceFields(patch) {
+    setForm((f) => ({ ...f, ...patch }));
+  }
+
+  function setVoiceOpen(open) {
+    setSearchParams(open ? { voice: '1' } : {}, { replace: true });
   }
 
   // Debounced advisory check -- runs once the finder has filled in a
@@ -283,6 +287,20 @@ export default function ReportForm() {
       <Link to={isFound ? '/found' : '/lost'} className="back-link">
         ← Back
       </Link>
+
+      {voiceOpen ? (
+        <VoiceAssistant
+          key={type}
+          type={isFound ? 'found' : 'lost'}
+          form={form}
+          onApply={applyVoiceFields}
+          onClose={() => setVoiceOpen(false)}
+        />
+      ) : (
+        <button type="button" className="voice-open-btn" onClick={() => setVoiceOpen(true)}>
+          <MicIcon /> Fill by Voice
+        </button>
+      )}
 
       <form
         className={`report-card ${isFound ? 'report-card--found' : 'report-card--lost'}`}
