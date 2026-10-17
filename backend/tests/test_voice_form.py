@@ -399,6 +399,73 @@ def test_plain_mode_still_has_no_tools(monkeypatch):
     assert captured[0].system_instruction
 
 
+# --- explicit updates and "submit" intent ----------------------------------------
+
+def test_explicit_update_only_counts_fields_with_a_new_valid_value():
+    raw = {"color": "Blue", "update_fields": ["color", "brand", "title"]}
+    fields, _ = ex.validate_extraction(raw, "lost", NOW)
+    explicit, submit = ex.validate_intent(raw, fields, "lost")
+    assert explicit == ["color"]  # brand/title had no new value
+    assert submit is False
+
+
+def test_date_or_time_change_maps_to_item_datetime():
+    raw = {"item_date": "2026-10-13", "item_time": "10:00", "update_fields": ["item_date", "item_time"]}
+    fields, _ = ex.validate_extraction(raw, "lost", NOW)
+    assert ex.validate_intent(raw, fields, "lost")[0] == ["item_datetime"]
+
+
+def test_update_fields_cannot_target_hidden_answer_or_other_report_types_fields():
+    raw = {"title": "Keys", "collection_point": "PRP", "hidden_answer": "x",
+           "update_fields": ["hidden_answer", "collection_point", "is_admin", "title", "title"]}
+    fields, _ = ex.validate_extraction(raw, "lost", NOW)
+    assert ex.validate_intent(raw, fields, "lost")[0] == ["title"]
+    fields, _ = ex.validate_extraction(raw, "found", NOW)
+    assert sorted(ex.validate_intent(raw, fields, "found")[0]) == ["collection_point", "title"]
+
+
+@pytest.mark.parametrize("value,expected", [(True, True), ("true", False), (1, False), (None, False)])
+def test_wants_submit_must_be_a_real_true(value, expected):
+    assert ex.validate_intent({"wants_submit": value}, {}, "lost")[1] is expected
+
+
+@pytest.mark.parametrize("raw", [None, [], "x"])
+def test_intent_of_garbage_is_nothing(raw):
+    assert ex.validate_intent(raw, {}, "lost") == ([], False)
+
+
+def test_endpoint_returns_explicit_and_submit_flags_and_never_submits(app_client, monkeypatch):
+    _fake_gemini(monkeypatch, {"color": "Blue", "update_fields": ["color"], "wants_submit": True})
+    r = app_client.post("/voice-form/extract", json=_body(current_fields={"color": "Black"}, transcript="change the color to blue and submit it"))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["fields"] == {"color": "Blue"}
+    assert data["explicit"] == ["color"]
+    assert data["submit_requested"] is True
+
+
+def test_endpoint_defaults_when_model_gives_no_intent(app_client, monkeypatch):
+    _fake_gemini(monkeypatch, {"title": "Keys"})
+    data = app_client.post("/voice-form/extract", json=_body()).json()
+    assert data["explicit"] == [] and data["submit_requested"] is False
+
+
+def test_asking_for_several_is_accepted_and_reaches_the_prompt(app_client, monkeypatch):
+    seen = []
+    _fake_gemini(monkeypatch, {}, capture=seen)
+    r = app_client.post("/voice-form/extract", json=_body(asking_for="several"))
+    assert r.status_code == 200
+    assert "several details" in seen[0]
+
+
+@pytest.mark.parametrize("report_type", ["lost", "found"])
+def test_gemini_schema_has_intent_fields_and_no_hidden_answer(report_type):
+    props = ex._response_schema(report_type).properties
+    assert "update_fields" in props and "wants_submit" in props
+    assert "hidden_answer" not in props
+    assert "hidden_answer" not in props["update_fields"].items.enum
+
+
 # --- found reports must carry a collection point (reports.py) --------------------
 
 def _found_payload(**over):

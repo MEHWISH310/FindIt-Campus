@@ -130,7 +130,9 @@ Rules:
 - item_time (lost reports only): HH:MM in 24-hour time, only if a time or time of day was stated (morning 09:00, afternoon 15:00, evening 18:00, night 21:00).
 - collection_point (found reports only): one of PRP, SJT, TT -- where the owner can collect the item. Letters spoken separately ("P R P") count. Omit if unclear.
 - hidden_question (found reports only): a verification question only the real owner could answer, if the speaker proposes one. Never output or ask for the answer to it.
-- If "currently asking for" names a field and the utterance is a short answer, put the answer in that field.
+- If "currently asking for" names a field and the utterance is a short answer, put the answer in that field. When it says "several details", the speaker may answer any of them in one sentence.
+- update_fields: the form field names (title, description, category, color, brand, location_name, item_datetime, collection_point, hidden_question) the speaker EXPLICITLY asked to change, replace or correct, e.g. "change the color to blue", "actually it's a Nike bag", "no, it was on Tuesday". Always give the new value in that field too. Leave it out for first-time answers. Date or time changes use item_datetime.
+- wants_submit: true only if the speaker asks to submit, send, post or finish the report. You never submit anything; just report the intent.
 Respond with JSON only."""
 
 
@@ -149,7 +151,7 @@ def build_prompt(
         f"Current local date and time: {client_now.strftime(CLIENT_NOW_FORMAT)} ({client_now.strftime('%A')})\n"
         f"Allowed categories: {', '.join(CATEGORIES)}\n"
         f"Fields already on the form (JSON): {json.dumps(known, ensure_ascii=False)}\n"
-        f"Currently asking for: {asking_for or 'nothing in particular'}\n"
+        f"Currently asking for: {'several details' if asking_for == 'several' else (asking_for or 'nothing in particular')}\n"
         f"<transcript>\n{transcript}\n</transcript>"
     )
 
@@ -170,6 +172,11 @@ def _response_schema(report_type: str) -> types.Schema:
     else:
         props["collection_point"] = types.Schema(type=s, enum=BUILDING_CODES)
         props["hidden_question"] = types.Schema(type=s)
+    props["update_fields"] = types.Schema(
+        type=types.Type.ARRAY,
+        items=types.Schema(type=s, enum=COMMON_KEYS + (LOST_KEYS if report_type == "lost" else FOUND_KEYS)),
+    )
+    props["wants_submit"] = types.Schema(type=types.Type.BOOLEAN)
     return types.Schema(type=types.Type.OBJECT, properties=props)
 
 
@@ -263,6 +270,27 @@ def validate_extraction(raw, report_type: str, client_now: datetime):
     return fields, notes
 
 
+def validate_intent(raw, fields: dict, report_type: str):
+    """Returns (explicit, submit_requested).
+
+    `explicit` = fields the speaker asked to CHANGE and for which a validated
+    new value exists in `fields`. Only these may replace text the user typed.
+    Anything not in the allowed list for this report type is ignored.
+    """
+    if not isinstance(raw, dict):
+        return [], False
+    allowed = set(allowed_keys(report_type))
+    asked = raw.get("update_fields")
+    explicit: list[str] = []
+    if isinstance(asked, list):
+        for key in asked:
+            if key == "item_date" or key == "item_time":
+                key = "item_datetime"
+            if isinstance(key, str) and key in allowed and key in fields and key not in explicit:
+                explicit.append(key)
+    return explicit, raw.get("wants_submit") is True
+
+
 # --- Gemini call -------------------------------------------------------------
 
 def _generate_sync(prompt: str, report_type: str, json_mode: bool = True) -> str:
@@ -341,4 +369,5 @@ async def extract_fields(
         raise ExtractionError(502, "Couldn't understand that. Please try again or type it into the form.")
 
     fields, notes = validate_extraction(raw, report_type, client_now)
-    return {"fields": fields, "notes": notes}
+    explicit, submit_requested = validate_intent(raw, fields, report_type)
+    return {"fields": fields, "notes": notes, "explicit": explicit, "submit_requested": submit_requested}

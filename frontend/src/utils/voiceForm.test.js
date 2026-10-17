@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { CATEGORIES } from './categories';
 import {
   FIELD_LABELS,
+  SUBMIT_REFUSAL,
+  buildReply,
+  combinedFollowUp,
+  completionMessage,
+  greeting,
   followUpQuestion,
   getMissingFields,
   mergeVoiceFields,
@@ -141,5 +146,83 @@ describe('notes and dates', () => {
 
   it('formats local time the way datetime-local inputs expect', () => {
     expect(toLocalInputValue(new Date(2026, 9, 14, 7, 5))).toBe('2026-10-14T07:05');
+  });
+});
+
+describe('explicit voice updates', () => {
+  it('replaces text the user typed when the speaker asked to change that field', () => {
+    const form = { ...blank, title: 'My own title', color: 'Black' };
+    const r = mergeVoiceFields(form, { title: 'Blue bottle', color: 'Green' }, {}, ['title']);
+    expect(r.patch).toEqual({ title: 'Blue bottle' });
+    expect(r.applied).toEqual(['title']);
+    expect(r.kept).toEqual(['color']); // not asked to change, so still protected
+  });
+});
+
+describe('spoken wording', () => {
+  it('greets with a question that matches the report type', () => {
+    expect(greeting('found')).toMatch(/found/);
+    expect(greeting('lost')).toMatch(/lost/);
+    expect(greeting('lost')).not.toMatch(/tap the microphone/i);
+  });
+
+  it('asks for everything that is missing in one sentence', () => {
+    const text = combinedFollowUp(['category', 'location_name', 'item_datetime'], 'lost');
+    expect(text).toBe('Please tell me the category, where you lost it and roughly when you lost it.');
+  });
+
+  it('warns not to say the verification answer out loud when asking for the question', () => {
+    expect(combinedFollowUp(['collection_point', 'hidden_question'], 'found')).toMatch(/PRP, SJT or TT.*say the answer/s);
+  });
+});
+
+describe('buildReply', () => {
+  const base = { type: 'lost', notes: [], applied: [], kept: [], explicit: [], submitRequested: false, missing: [], answerTyped: false };
+
+  it('asks for all missing details together and keeps listening', () => {
+    const r = buildReply({ ...base, applied: ['title'], missing: ['category', 'location_name', 'item_datetime'] });
+    expect(r.text).toBe('Please tell me the category, where you lost it and roughly when you lost it.');
+    expect(r.asking).toBe('several');
+    expect(r.listenAfter).toBe(true);
+  });
+
+  it('asks the specific question when only one detail is missing', () => {
+    const r = buildReply({ ...base, applied: ['title'], missing: ['item_datetime'] });
+    expect(r.text).toMatch(/when did you lose it/i);
+    expect(r.asking).toBe('item_datetime');
+    expect(r.listenAfter).toBe(true);
+  });
+
+  it('stops listening once everything required is filled', () => {
+    const r = buildReply({ ...base, applied: ['item_datetime'], missing: [] });
+    expect(r.listenAfter).toBe(false);
+    expect(r.text).toMatch(/press Submit report/);
+  });
+
+  it('reminds finders to type the verification answer themselves', () => {
+    expect(completionMessage('found', false)).toMatch(/type the verification answer yourself/);
+    expect(completionMessage('found', true)).not.toMatch(/type the verification answer/);
+    expect(completionMessage('lost', false)).not.toMatch(/verification/);
+  });
+
+  it('never submits: a spoken "submit" gets the review reminder', () => {
+    const r = buildReply({ ...base, submitRequested: true, missing: [] });
+    expect(r.text).toContain(SUBMIT_REFUSAL);
+    expect(r.text).not.toMatch(/All set/);
+    const still = buildReply({ ...base, submitRequested: true, missing: ['category', 'location_name'] });
+    expect(still.text).toContain(SUBMIT_REFUSAL);
+    expect(still.listenAfter).toBe(true);
+  });
+
+  it('confirms updates and explains how to replace typed text', () => {
+    const updated = buildReply({ ...base, applied: ['color'], explicit: ['color'], missing: [] });
+    expect(updated.text).toMatch(/^Updated colour\./);
+    const kept = buildReply({ ...base, kept: ['title'], missing: [] });
+    expect(kept.text).toMatch(/kept what you typed in title.*change the title/);
+  });
+
+  it('says so when nothing useful was heard', () => {
+    expect(buildReply({ ...base, missing: ['title', 'description'] }).text).toMatch(/^I didn't catch any details\. Please tell me/);
+    expect(buildReply({ ...base, missing: [] }).text).toMatch(/change the colour to blue/);
   });
 });

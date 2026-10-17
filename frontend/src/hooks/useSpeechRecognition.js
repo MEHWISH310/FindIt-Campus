@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { pickFemaleVoice } from '../utils/speechVoice';
 
 // English only. Change this one constant for another English variant
 // (e.g. 'en-US', 'en-GB'). No other languages are supported on purpose.
@@ -110,19 +111,59 @@ export function useSpeechRecognition({ onFinal }) {
   return { supported, listening, interim, error, start, stop };
 }
 
-/** Read a prompt aloud with the browser's built-in speech synthesis. */
+/** Spoken replies use the browser's built-in speech synthesis (free, no key). */
 export function canSpeak() {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
 }
 
-export function speak(text) {
-  if (!canSpeak()) return;
+// Chrome fills its voice list asynchronously after the first request, so ask
+// once when this file loads. By the time someone opens the panel the list is
+// ready and the female voice can be chosen for the very first sentence.
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  window.speechSynthesis.getVoices();
+}
+
+// Each speak() call gets a number; a cancelled or replaced utterance must not
+// fire its onEnd callback (that would start the microphone at the wrong time).
+let speakToken = 0;
+
+/**
+ * Speaks `text` in a female English voice when the device has one (see
+ * utils/speechVoice.js). `onEnd` is called once when speaking finishes, or
+ * after a safety timeout because some browsers never report the end.
+ */
+export function speak(text, onEnd) {
+  const token = ++speakToken;
+  if (!canSpeak()) {
+    onEnd?.();
+    return;
+  }
+  let finished = false;
+  let timer = null;
+  const finish = () => {
+    if (finished || token !== speakToken) return;
+    finished = true;
+    clearTimeout(timer);
+    onEnd?.();
+  };
+
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = SPEECH_LOCALE;
+  const voice = pickFemaleVoice(window.speechSynthesis.getVoices());
+  if (voice) {
+    utterance.voice = voice;
+    utterance.lang = voice.lang;
+  }
+  utterance.rate = 1;
+  utterance.pitch = 1.05;
+  utterance.onend = finish;
+  utterance.onerror = finish;
+  timer = setTimeout(finish, Math.max(3000, text.length * 90 + 2000));
   window.speechSynthesis.speak(utterance);
 }
 
 export function stopSpeaking() {
+  speakToken += 1; // invalidates any pending onEnd
   if (canSpeak()) window.speechSynthesis.cancel();
 }

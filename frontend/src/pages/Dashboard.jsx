@@ -3,7 +3,6 @@ import { useNavigate, Link } from 'react-router-dom';
 import { listReports, escalateStale, showToast, getStoredToken } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import NoticeCard from '../components/NoticeCard';
-import MicIcon from '../components/MicIcon';
 
 // A report counts as "past the threshold" once it's high-risk, still
 // unclaimed (not resolved), and the item itself has been missing for more
@@ -135,9 +134,6 @@ export default function Dashboard({ reportType }) {
           )}
           <Link to={`/report/${reportType}`} className={`header-btn header-btn--${reportType}`}>
             Report {reportType}
-          </Link>
-          <Link to={`/report/${reportType}?voice=1`} className={`header-btn header-btn--voice header-btn--${reportType}`}>
-            <MicIcon /> Fill by Voice
           </Link>
         </div>
       </div>

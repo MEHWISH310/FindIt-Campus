@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import HeroShapes from '../components/HeroShapes';
-import MicIcon from '../components/MicIcon';
 
 function ArrowIcon() {
   return (
@@ -256,14 +255,6 @@ export default function Landing() {
             <Link to="/report/found" className="cta cta--found">
               Report something found
               <ArrowIcon />
-            </Link>
-          </div>
-          <div className="landing-voice">
-            <Link to="/report/lost?voice=1" className="cta cta--lost">
-              <MicIcon size={16} /> Fill by Voice: lost item
-            </Link>
-            <Link to="/report/found?voice=1" className="cta cta--found">
-              <MicIcon size={16} /> Fill by Voice: found item
             </Link>
           </div>
           <button

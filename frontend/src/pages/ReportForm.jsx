@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { createReport, uploadPhotos, checkVerificationQuestion, ApiError } from '../api/client';
 import { answerLeaks } from '../utils/leakCheck';
 import { COLLECTION_POINTS } from '../utils/buildings';
@@ -42,10 +42,9 @@ export default function ReportForm() {
   const { type } = useParams(); // 'lost' | 'found'
   const isFound = type === 'found';
   const navigate = useNavigate();
-  // "Fill by Voice" opens with ?voice=1 (from the Dashboard / Landing
-  // buttons). It only fills this same form; submitting stays manual.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const voiceOpen = searchParams.get('voice') === '1';
+  // "Fill by Voice" (button beside Back) opens the voice panel. It only
+  // fills this same form; submitting stays manual.
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -89,10 +88,6 @@ export default function ReportForm() {
   // field stays editable by hand and nothing is submitted.
   function applyVoiceFields(patch) {
     setForm((f) => ({ ...f, ...patch }));
-  }
-
-  function setVoiceOpen(open) {
-    setSearchParams(open ? { voice: '1' } : {}, { replace: true });
   }
 
   // Debounced advisory check -- runs once the finder has filled in a
@@ -284,11 +279,18 @@ export default function ReportForm() {
 
   return (
     <div className="report-page report-page--wide">
-      <Link to={isFound ? '/found' : '/lost'} className="back-link">
-        ← Back
-      </Link>
+      <div className="report-page__top">
+        <Link to={isFound ? '/found' : '/lost'} className="back-link">
+          ← Back
+        </Link>
+        {!voiceOpen && (
+          <button type="button" className="voice-open-btn" onClick={() => setVoiceOpen(true)}>
+            <MicIcon /> Fill by Voice
+          </button>
+        )}
+      </div>
 
-      {voiceOpen ? (
+      {voiceOpen && (
         <VoiceAssistant
           key={type}
           type={isFound ? 'found' : 'lost'}
@@ -296,10 +298,6 @@ export default function ReportForm() {
           onApply={applyVoiceFields}
           onClose={() => setVoiceOpen(false)}
         />
-      ) : (
-        <button type="button" className="voice-open-btn" onClick={() => setVoiceOpen(true)}>
-          <MicIcon /> Fill by Voice
-        </button>
       )}
 
       <form

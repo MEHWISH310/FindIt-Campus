@@ -67,6 +67,7 @@ class VoiceExtractRequest(BaseModel):
         Literal[
             "title", "description", "category", "color", "brand",
             "location_name", "item_datetime", "collection_point", "hidden_question",
+            "several",
         ]
     ] = None
     # The browser's local time as "YYYY-MM-DDTHH:mm" -- used to resolve
@@ -82,6 +83,10 @@ class VoiceNote(BaseModel):
 class VoiceExtractResponse(BaseModel):
     fields: dict[str, str]
     notes: list[VoiceNote] = []
+    # Fields the speaker explicitly asked to change (may replace typed text).
+    explicit: list[str] = []
+    # The speaker asked to submit. Informational only: nothing is ever submitted here.
+    submit_requested: bool = False
 
 
 @router.post("/extract", response_model=VoiceExtractResponse)

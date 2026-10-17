@@ -2936,31 +2936,25 @@ button {
    Everything for the voice assistant lives in this block. Colours come from
    the existing theme tokens so it follows light/dark mode automatically. */
 
-/* Colours (lost = cranberry, found = green) come from the page's own
-   header-btn--lost / header-btn--found class, so it matches the Report
-   button beside it. This only adds the icon layout. */
-.header-btn--voice {
-  display: inline-flex;
+.report-page__top {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
-.landing-voice {
-  display: flex;
-  gap: 14px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin: -34px 0 48px;
+.report-page__top .back-link {
+  margin-bottom: 0;
 }
 
 .voice-open-btn {
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
-  padding: 9px 16px;
-  font-size: 0.85rem;
+  margin-left: auto;
+  padding: 8px 16px;
+  font-size: 0.82rem;
   font-weight: 500;
   color: var(--text);
   background: var(--surface);
@@ -3033,12 +3027,27 @@ button {
   background: var(--surface-hover);
 }
 
+.voice-caption {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  min-height: 1.5em;
+}
+
+.voice-caption--user {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .voice-messages {
   display: flex;
   flex-direction: column;
   gap: 8px;
   max-height: 220px;
   overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
 .voice-bubble {
@@ -3046,7 +3055,7 @@ button {
   max-width: 88%;
   padding: 9px 13px;
   border-radius: 14px;
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   line-height: 1.45;
 }
 
@@ -3062,9 +3071,18 @@ button {
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-.voice-bubble--interim {
-  opacity: 0.65;
-  font-style: italic;
+.voice-link-btn {
+  background: transparent;
+  border: 0;
+  padding: 4px 2px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.voice-link-btn:hover {
+  color: var(--text);
 }
 
 .voice-notice {
@@ -3146,10 +3164,17 @@ button {
 }
 
 .voice-privacy {
-  margin: 0;
   font-size: 0.72rem;
   line-height: 1.5;
   color: var(--text-muted);
+}
+
+.voice-privacy summary {
+  cursor: pointer;
+}
+
+.voice-privacy p {
+  margin: 6px 0 0;
 }
 
 @media (max-width: 560px) {
