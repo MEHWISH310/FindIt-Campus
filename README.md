@@ -52,7 +52,7 @@ Access is restricted to verified college accounts (`@vitstudent.ac.in` / `@vit.a
 - Notification fires once, at report-creation time — not every time someone reopens the matches page, to avoid duplicate emails
 
 ### Conversational Assistant
-- A chat widget backed by Google Gemini (`gemini-3.1-flash-lite`) with function calling
+- A chat widget backed by Google Gemini (`gemini-3.1-flash-lite`) with function calling (Fill by Voice uses `gemini-3.5-flash-lite`)
 - Can create a lost/found report, search for matches, and explain how verification/custody/high-risk handling work, asking one clarifying question at a time
 - Admin users get extra tools through the same chat: a dashboard summary, a list of pending pickups, and confirming a handover
 
@@ -98,29 +98,32 @@ FindIt-Campus/
 │   │   ├── core/           # config, email, security/auth helpers
 │   │   ├── db/              # SQLAlchemy session/engine
 │   │   ├── matching/         # fusion.py, embeddings.py, calibration.py,
-│   │   │                     # redaction.py, verification_guard.py, leak_check.py
+│   │   │                     # train_calibrator.py, redaction.py,
+│   │   │                     # verification_guard.py, leak_check.py
 │   │   ├── models/            # Report, Match, CustodyRecord, User, Building
-│   │   ├── routers/            # reports, matches, custody, auth, chatbot
-│   │   ├── main.py               # FastAPI + Socket.IO entrypoint
-│   │   └── seed_admins.py         # bootstrap admin accounts
-│   ├── tests/
-│   │   └── test_fusion_and_calibration.py
-│   └── requirements.txt
+│   │   ├── routers/            # auth, reports, matches, custody, chatbot, voice_form
+│   │   ├── voice/               # Gemini extraction for Fill by Voice
+│   │   ├── realtime.py           # Socket.IO server
+│   │   ├── main.py                # FastAPI + Socket.IO entrypoint, startup migrations
+│   │   └── seed_admins.py          # bootstrap admin accounts
+│   ├── tests/               # test_voice_form.py (pytest), test_fusion_and_calibration.py (script)
+│   ├── export_labelled_pairs.py   # export confirmed/rejected pairs from the DB
+│   ├── generate_evaluation.py      # build docs/evaluation reports
+│   ├── labelled_pairs.csv           # exported evaluation data
+│   └── requirements.txt / requirements-dev.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── api/            # REST client, socket client
-│   │   ├── components/      # header, chat widget, modals, notifications, etc.
+│   │   ├── components/      # header, chat widget, voice assistant, modals, etc.
 │   │   ├── context/           # auth context
-│   │   ├── pages/               # Landing, Dashboard, ReportForm, Matches,
-│   │   │                        # ClaimedItems, Admin, Login, etc.
-│   │   └── utils/                # buildings, leak-check helpers
+│   │   ├── hooks/               # speech recognition, theme
+│   │   ├── pages/                # Landing, Dashboard, ReportForm, Matches,
+│   │   │                         # ClaimedItems, Admin, Login, etc.
+│   │   └── utils/                 # buildings, categories, leak-check, voice helpers
 │   └── package.json
-├── database/
-│   └── migrations/          # placeholder — schema currently managed by
-│                              # SQLAlchemy create_all() + additive ALTERs on startup
 └── docs/
-    ├── diagrams/
-    └── evaluation/
+    ├── evaluation/          # generated evaluation reports and plots
+    └── paper/                # paper draft and figures
 ```
 
 ---
@@ -138,7 +141,7 @@ Create a `.env` file in `backend/` (never commit it):
 
 ```
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/findit_campus
-SECRET_KEY=change-me
+SECRET_KEY=change-me   # use a long random value in production; the default is insecure
 FRONTEND_BASE_URL=http://localhost:5173
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
@@ -150,6 +153,8 @@ SMTP_FROM=your.address@gmail.com
 
 GEMINI_API_KEY=your-gemini-key
 ```
+
+Run `python -m app.seed_admins` (from `backend/`) once to create the admin accounts.
 
 Requires a Postgres database with the `pgvector` extension enabled (`CREATE EXTENSION vector;`). Tables are created automatically on startup; a few additive column migrations also run automatically.
 
@@ -167,10 +172,13 @@ npm install
 npm run dev
 ```
 
+Set `VITE_API_BASE_URL` in `frontend/.env` if the API is not at `http://localhost:8000`.
+
 ### Tests
 
 ```bash
 cd backend && pip install -r requirements-dev.txt && pytest tests/test_voice_form.py
+cd backend && python tests/test_fusion_and_calibration.py   # print-based sanity checks
 cd frontend && npm test
 ```
 
@@ -178,15 +186,15 @@ cd frontend && npm test
 
 ## Evaluation Status
 
-The fusion and calibration logic is covered by unit tests (`backend/tests/test_fusion_and_calibration.py`): weights always renormalize to 1.0, a missing photo redistributes the image weight across the remaining signals, a text-only report collapses to a text weight of 1.0, the disambiguation clustering behaves correctly on clear-leader / three-way-tie / empty-set boundary cases, and the Platt calibrator is monotonic with a reportable Expected Calibration Error.
+`backend/tests/test_fusion_and_calibration.py` is a sanity-check script (not an asserting test suite) for the scoring math: weights renormalize to 1.0, a missing photo redistributes the image weight, a text-only report collapses to a text weight of 1.0, disambiguation clustering on clear-leader / three-way-tie cases, and Platt calibrator monotonicity with a reportable ECE.
 
-Full quantitative evaluation — precision/recall/F1 against text-only and image-only baselines, calibration error and reliability diagrams, and a missing-modality ablation — is the next phase, to be run on a hand-labelled campus dataset alongside a semester-long pilot.
+Evaluation reports live in [`docs/evaluation/`](docs/evaluation/): fused vs text-only/image-only precision-recall, calibration (ECE and reliability curve), disambiguation impact, and a missing-modality ablation. They are generated from only **8 real labelled pairs** (7 matches, 1 rejection) exported from the live database, so the results are preliminary. A larger evaluation needs more confirmed handovers and rejections, ideally from a semester-long pilot.
 
 ---
 
 ## Team
 
-- Mehwish 
+- Mehwish
 - Mansi Sharma
 - Aarushi Chaudhary 
 
@@ -196,4 +204,4 @@ Faculty guide: Dr. Baskaran P
 
 ## License
 
-This project is for academic and research purposes.
+All rights reserved. This project is for academic and research purposes.
